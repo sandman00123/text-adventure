@@ -15,6 +15,7 @@ const __dirname = path.dirname(__filename);
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+dotenv.config();
 import OpenAI from 'openai';
 import { applyWildcardWordMode } from './nlp/wildcard.js';
 import { createClient } from '@supabase/supabase-js';   // [ADD at line 16]
@@ -43,9 +44,12 @@ console.log(
   "Using OpenAI key prefix:",
   (process.env.OPENAI_API_KEY || "").slice(0, 10)
 );
-const openaiApiKey = process.env.OPENAI_API_KEY || '';
-const openai = openaiApiKey ? new OpenAI({ apiKey: openaiApiKey }) : null;
-// --- Supabase Admin (server-side) ---                         // [ADD below line 35]
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+// --- Supabase Admin (server-side) ---
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
 
