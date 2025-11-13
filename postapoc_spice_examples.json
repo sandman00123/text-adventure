@@ -1,0 +1,23 @@
+[
+    {
+      "base": "The soldier carried a rusted rifle across the wasteland.",
+      "spiced": "The soldier carried a pitted rifle across the wasteland."
+    },
+    {
+      "base": "A scavenger searched the ruined supermarket for cans.",
+      "spiced": "A scavenger rummaged the gutted supermarket for cans."
+    },
+    {
+      "base": "The wind howled through the broken skyscrapers.",
+      "spiced": "The wind hissed through the skeletal skyscrapers."
+    },
+    {
+      "base": "You step into the crumbling subway station.",
+      "spiced": "You step into the lichen-choked subway station."
+    },
+    {
+      "base": "The survivors warmed themselves by a small fire.",
+      "spiced": "The survivors huddled around a sputtering fire."
+    }
+  ]
+  

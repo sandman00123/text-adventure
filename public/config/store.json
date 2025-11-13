@@ -1,0 +1,19 @@
+{
+  "beta": true,
+  "currency": "USD",
+  "tiers": {
+    "standard": 4.99,
+    "premium": 9.99,
+    "ultimate": 19.99
+  },
+  "one_time": {
+    "remove_ads": 2.99,
+    "mic": 1.99,
+    "tts": 1.99,
+    "mic_tts_bundle": 2.99,
+    "sarcasm": 0.99,
+    "gore": 0.99,
+    "adult": 1.49,
+    "refill": 0.99
+  }
+}

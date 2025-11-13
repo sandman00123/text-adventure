@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Adventure</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- keep your styles so the play page looks the same -->
+  <link href="/styles.css" rel="stylesheet" />
+  <link href="/css/overrides.css" rel="stylesheet" />
+</head>
+<body>
+  <div class="wrap">
+    <a href="/" class="link">&larr; Back</a>
+    <h1>Adventure</h1>
+
+    <div id="main-quest" class="badge"></div>
+    <div id="ai-loader" class="ai-loader" aria-live="polite">
+      <div class="ai-dot"></div><div class="ai-dot"></div><div class="ai-dot"></div>
+    </div>
+
+    <div id="log" class="log"></div>
+
+    <div class="row">
+      <input id="action" placeholder='Type an action, e.g. "look around"' />
+      <button id="send" type="button">Send</button>
+    </div>
+  </div>
+
+  <!-- helpers then game logic (order matters) -->
+  <script>
+    window.Typewriter=(function(){const s=m=>new Promise(r=>setTimeout(r,m));
+      async function t(el,txt,o={}){const cps=Math.max(1,o.cps||45),d=1000/cps;el.textContent='';
+        for(let i=0;i<txt.length;i++){el.textContent+=txt[i];await s(d);}} return {typeText:t};})();
+    (function(){const byId=id=>document.getElementById(id);
+      async function renderStory(text,opts={cps:45}){
+  const wrap=byId('log'); if(!wrap) return;
+  const line=document.createElement('div');
+  line.className='line ai';
+  wrap.appendChild(line);
+  await window.Typewriter.typeText(line, text||'', opts);
+  wrap.scrollTop = wrap.scrollHeight;
+}
+      function showLoader(){const el=byId('ai-loader');if(el)el.style.display='inline-flex'}
+      function hideLoader(){const el=byId('ai-loader');if(el)el.style.display='none'}
+      async function withLoader(task){showLoader();try{return await task();}finally{hideLoader();}}
+      window.AIUX={renderStory,renderUser,withLoader,showLoader,hideLoader};
+      function renderUser(text){
+  const wrap=byId('log'); if(!wrap) return;
+  const line=document.createElement('div');
+  line.className='line user';
+  line.textContent='You: '+(text||'');
+  wrap.appendChild(line);
+  wrap.scrollTop = wrap.scrollHeight;
+}
+    })();
+  </script>
+  <script src="/game.js"></script>
+</body>
+</html>

@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Saved Stories</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root{
+      --bg:#0e0f13; --panel:#16171d; --card:#1d1f27; --ink:#e8eaf0; --muted:#98a2b3; --line:#2a2c36;
+      --accent:#7c5cff; --accent-2:#3dd9a3;
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+    a{color:inherit}
+    header{
+      position:sticky;top:0;z-index:10;background:linear-gradient(180deg,var(--panel),rgba(22,23,29,.85));
+      backdrop-filter:saturate(1.2) blur(6px); border-bottom:1px solid var(--line);
+      display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;
+    }
+    header .title{font-weight:700;letter-spacing:.2px}
+    header .right a{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border:1px solid var(--line);border-radius:10px;text-decoration:none}
+    main{max-width:980px;margin:22px auto;padding:0 16px 48px}
+    .grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(280px,1fr))}
+    .card{
+      border:1px solid var(--line);border-radius:14px;background:var(--card);padding:14px;display:flex;flex-direction:column;gap:10px;
+      box-shadow:0 8px 24px rgba(0,0,0,.25);
+    }
+    .card h3{margin:0;font-size:16px;line-height:1.2}
+    .meta{color:var(--muted);font-size:12px;display:flex;flex-wrap:wrap;gap:10px}
+    .row{display:flex;gap:10px;flex-wrap:wrap}
+    .btn{
+      appearance:none;border:1px solid var(--line);background:var(--panel);padding:8px 10px;border-radius:10px;cursor:pointer;font-weight:600;color: #fff;
+    }
+    .btn:hover{border-color:var(--accent)}
+    .badge{padding:2px 8px;border-radius:999px;border:1px solid var(--line);font-size:11px}
+    .ok{border-color:#256a3f;color:#8be39f}
+    .warn{border-color:#8a6800;color:#ffd36b}
+    .err{border-color:#7a2630;color:#ff9aa8}
+    .empty,.error{color:var(--muted);padding:12px 0}
+
+    /* Modal for full story */
+    .modalBack{
+      position:fixed;inset:0;background:rgba(0,0,0,.55);backdrop-filter:blur(2px);
+      display:none;align-items:flex-start;justify-content:center;padding:40px 16px;z-index:100;
+    }
+    .modal{width:min(880px,100%);max-height:80vh;overflow:auto;border:1px solid var(--line);border-radius:16px;background:var(--panel);
+      box-shadow:0 20px 60px rgba(0,0,0,.35)}
+    .modalHdr{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--line)}
+    .modalHdr h4{margin:0;font-size:16px}
+    .modalBody{padding:14px 14px 20px}
+    /* Chat look */
+    .chat{display:flex;flex-direction:column;gap:10px}
+    .msg{max-width:78%;padding:10px 12px;border-radius:14px;border:1px solid var(--line)}
+    .from-user{margin-left:auto;background:#0c3c2a;border-color:#194f3a}
+    .from-assistant{background:#1b1c22}
+    .from-system{background:#121318;color:var(--muted);font-style:italic}
+    .role{display:block;font-size:11px;color:var(--muted);margin-bottom:4px}
+    .closeBtn{cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:6px 10px;background:var(--card);font-weight:600}
+    .closeBtn:hover{border-color:var(--accent)}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="title">Saved Stories</div>
+    <div class="right">
+      <a href="/index.html" aria-label="Back to game">← Back to game</a>
+    </div>
+  </header>
+
+  <main>
+    <div id="historyStatus" class="empty">Loading…</div>
+    <div id="stories" class="grid" hidden></div>
+  </main>
+
+  <!-- Full story modal -->
+  <div id="storyModal" class="modalBack" role="dialog" aria-modal="true" aria-labelledby="storyTitle">
+    <div class="modal">
+      <div class="modalHdr">
+        <h4 id="storyTitle">Story</h4>
+        <button class="closeBtn" id="closeModalBtn">Close</button>
+      </div>
+      <div class="modalBody">
+        <div id="chatView" class="chat"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/history.js" defer></script>
+</body>
+</html>

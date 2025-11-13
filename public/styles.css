@@ -1,0 +1,14 @@
+* { box-sizing: border-box; }
+body { font-family: system-ui, Arial, sans-serif; margin: 0; background: #0d0f14; color: #f2f4f8; }
+.wrap { max-width: 840px; margin: 24px auto; padding: 0 16px; }
+h1, h2 { margin: 8px 0 12px; }
+.card { background: #151923; padding: 16px; border-radius: 8px; margin: 12px 0; }
+input, select { width: 100%; padding: 10px; margin: 6px 0 12px; border-radius: 6px; border: 1px solid #2b3243; background: #0f1320; color: #f2f4f8; }
+button { padding: 10px 14px; border-radius: 6px; border: 0; background: #3b82f6; color: white; cursor: pointer; }
+button:hover { filter: brightness(1.1); }
+.log { background: #0f1320; padding: 12px; min-height: 280px; border-radius: 8px; white-space: pre-wrap; }
+.row { display: flex; gap: 8px; margin-top: 10px; }
+.row input { flex: 1; }
+.badge { background: #1e293b; padding: 8px 12px; border-radius: 6px; margin: 10px 0; color: #93c5fd; }
+.link { color: #93c5fd; text-decoration: none; }
+.link:hover { text-decoration: underline; }

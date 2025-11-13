@@ -1,0 +1,42 @@
+/* Side ads shell pinned to viewport edges (hidden on small screens) */
+#ads-shell {
+  position: fixed;
+  inset: 0;            /* top/right/bottom/left: 0; */
+  pointer-events: none; /* let clicks pass through by default */
+  z-index: 1500;       /* above app UI but below modals if you want */
+}
+
+/* Each vertical ad column */
+#ads-shell .vertical-ad {
+  position: fixed;
+  top: 0;
+  width: 120px;        /* standard skyscraper width: 120px (can do 160px too) */
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255,255,255,0.04);
+  border-radius: 10px;
+  overflow: hidden;
+  pointer-events: auto; /* enable clicks inside the ad */
+}
+
+/* Left and right docking */
+#ads-shell .vertical-ad.left  { left: 8px; }
+#ads-shell .vertical-ad.right { right: 8px; }
+
+/* Image inside the ad slot */
+#ads-shell .vertical-ad img {
+  width: 100%;
+  height: auto;
+  display: block;
+  object-fit: cover;
+}
+
+/* Hide side ads on smaller screens */
+@media (max-width: 1100px) {
+  #ads-shell,
+  #ads-shell .vertical-ad {
+    display: none !important;
+  }
+}

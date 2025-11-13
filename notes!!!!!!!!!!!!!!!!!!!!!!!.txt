@@ -1,0 +1,5 @@
+next moves:
+the game only generate one image, then it doesnt generate any more. check.
+fix the text that says "generating iamge.." (it looks like the game.css file wasnt connected).check.
+ook into the speed of image generation.
+change the game.css file's visuals.

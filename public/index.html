@@ -1,0 +1,916 @@
+<!DOCTYPE html>
+<html lang="en">
+<style>#chat>*+*,.chat>*+*,#log>*+*,.log>*+*,#messages>*+*,.messages>*+*{margin-top:12px}.scene-image img { display: block; margin: 0 auto; }
+</style>
+<style>
+  /* Reserve horizontal gutters so content never sits under the side ads */
+  /* Ads are 120px wide + ~8px gutter on each side ⇒ reserve 136px per side */
+  @media (min-width: 1100px) {
+    .app-main { padding-left: 136px; padding-right: 136px; }
+  }
+
+  /* On narrow screens, remove the gutters (side ads are hidden anyway) */
+  @media (max-width: 1099px) {
+    .app-main { padding-left: 0; padding-right: 0; }
+  }
+</style>
+
+<link rel="stylesheet" href="/css/ads.css">
+<!-- ADD: banner element -->
+<div id="statusBanner" class="warn" role="status" aria-live="polite"></div>
+
+<!-- ADD: fetch wrapper that watches /api/next responses -->
+<script>
+(function(){
+  const banner = document.getElementById('statusBanner');
+  function showBanner(msg, kind='warn', ms=3500){
+    banner.className = ''; banner.classList.add(kind); 
+    banner.textContent = msg; banner.style.display = 'block';
+    clearTimeout(showBanner._t); showBanner._t = setTimeout(()=>{ banner.style.display='none'; }, ms);
+  }
+  function tryDisableInput(){
+    const el = document.querySelector('input[type="text"], textarea, #input, .input');
+    if (el) el.disabled = true;
+    const btn = document.querySelector('button[type="submit"], #send, .send');
+    if (btn) btn.disabled = true;
+  }
+
+  const realFetch = window.fetch;
+  window.fetch = async function(resource, init){
+    const res = await realFetch(resource, init);
+
+    // Only inspect replies from /api/next
+    const url = (typeof resource === 'string') ? resource : (resource?.url || '');
+    if (url.includes('/api/next')) {
+      try {
+        const clone = res.clone();
+        const data = await clone.json().catch(()=>null);
+        window._lastNextResponse = data; // <— store full /api/next JSON for renderStory pairing
+        if (data && typeof data === 'object') {
+          // 1) Hard death → YOU DIED (no continuation)
+          if (data.dead === true) {
+            showBanner('YOU DIED', 'error', 6000);
+            tryDisableInput();
+          }
+          // 2) Objective failed → show warning (world continues)
+          else if (data.objective_failed === true) {
+            showBanner('Main objective failed', 'warn', 5000);
+          }
+          // 3) Objective completed (epilogue) → show success (can continue)
+          else if (data.completed === true && data.can_continue === true) {
+            showBanner('Main objective complete — you can continue', 'ok', 5000);
+          }
+        }
+      } catch (e) {
+        // ignore parsing errors; leave original response untouched
+      }
+    }
+    return res;
+  };
+})();
+</script>
+
+<style>
+  #statusBanner {
+    position: fixed; left: 50%; top: 16px; transform: translateX(-50%);
+    z-index: 9999; padding: 12px 18px; border-radius: 10px;
+    font-weight: 700; font-size: 18px; color: #fff; display: none;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+  }
+  #statusBanner.ok    { background: #2e7d32; }   /* success */
+  #statusBanner.warn  { background: #f57c00; }   /* warning */
+  #statusBanner.error { background: #c62828; }   /* error (death) */
+</style>
+<style>
+  /* Hand cursor for anything that behaves like a button/link */
+  button,
+  a,
+  .btn,
+  .button,
+  #historyBtn,
+  #historyLink {
+    cursor: pointer;
+  }
+</style>
+<head>
+  <style>
+    /* Button look to match the game’s sleek style */
+    .btn-ui {
+      appearance:none; cursor:pointer; font-weight:700;
+      padding:8px 12px; border-radius:10px; border:1px solid #2a2c36;
+      background:#16171d; color:#e8eaf0;
+    }
+    .btn-ui:hover { border-color:#7c5cff; }
+  </style>
+  
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+  <title>AI Text Adventure</title>
+
+  <!-- keep your original inline styles so the UI looks the same -->
+  <style>
+    :root{
+      --ui-bg:#0b0e13;--ui-panel:#171a21;--ui-text:#e6e6e6;--ui-accent:#4ea1ff;
+      --ui-muted:#8a8f98;--radius:10px;--shadow:0 6px 20px rgba(0,0,0,.35)
+    }
+    html,body{background:var(--ui-bg);color:var(--ui-text);margin:0;
+      font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial,"Apple Color Emoji","Segoe UI Emoji"}
+    .app-topbar{position:sticky;top:0;z-index:1000;background:linear-gradient(180deg,#0c0f14,#0c0f1400);
+      border-bottom:1px solid rgba(255,255,255,.06);backdrop-filter:blur(4px)}
+    .topbar-inner{max-width:1100px;margin:0 auto;padding:14px 16px;display:flex;align-items:center;justify-content:space-between}
+    .brand{font-weight:800;letter-spacing:.3px}
+    .auth-widget{position:relative;display:inline-flex;align-items:center;gap:8px}
+    .auth-button{background:var(--ui-panel);color:var(--ui-text);border:1px solid rgba(255,255,255,.08);
+      border-radius:999px;padding:8px 12px;cursor:pointer;box-shadow:var(--shadow);font-size:14px}
+    .auth-panel{position:absolute;top:calc(100% + 10px);right:0;width:320px;background:var(--ui-panel);
+      border:1px solid rgba(255,255,255,.08);border-radius:var(--radius);padding:10px;box-shadow:var(--shadow);display:none}
+    .auth-tabs{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px}
+    .auth-tab{padding:8px 10px;background:#11141a;border:1px solid rgba(255,255,255,.08);border-radius:8px;text-align:center;cursor:pointer;font-size:13px}
+    .auth-tab.active{background:#0c0f14;border-color:rgba(78,161,255,.5)}
+    .auth-form{display:none;display:grid;gap:8px}
+    .auth-form.active{display:grid}
+    .auth-form input{background:#0c0f14;color:var(--ui-text);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:10px;font-size:14px}
+    .auth-submit{background:var(--ui-accent);color:#041221;font-weight:700;border:none;border-radius:8px;padding:10px;cursor:pointer}
+    .user-chip{display:none;align-items:center;gap:8px;background:var(--ui-panel);border:1px solid rgba(255,255,255,.08);border-radius:999px;padding:6px 10px}
+    .user-email{max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ui-muted);font-size:13px}
+    .app-main .page-wrap{max-width:1100px;margin:28px auto;padding:0 16px}
+    .section-title{margin:16px 0 8px;font-size:18px;color:#d8e6ff}
+    #main-quest{margin:6px 0 4px;color:#b7c8ff}
+    .story-output{border:1px solid rgba(255,255,255,.06);background:#0c0f14;min-height:140px;padding:12px;border-radius:10px;white-space:pre-wrap}
+    #log:empty { display: none; }
+    #message-tail:empty { display: none; }
+    .controls .row{display:flex;gap:8px;margin-top:12px;align-items:center;flex-wrap:wrap}
+    .controls input,.controls select{flex:1;min-width:220px;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,.08);background:#0c0f14;color:var(--ui-text)}
+    .controls button{padding:8px 14px;border-radius:8px;border:1px solid rgba(255,255,255,.08);background:#182132;color:#e6f0ff;cursor:pointer}
+    .ai-loader{display:none;align-items:center;gap:8px;margin:10px 0 16px}
+    .ai-dot{width:8px;height:8px;background:#cfe4ff;border-radius:50%;animation:aiPulse 900ms infinite ease-in-out}
+    .ai-dot:nth-child(2){animation-delay:150ms}.ai-dot:nth-child(3){animation-delay:300ms}
+    @keyframes aiPulse{0%{transform:scale(1);opacity:.6}40%{transform:scale(1.6);opacity:1}100%{transform:scale(1);opacity:.6}}
+    .hint{color:#8aa1c2;font-size:.95rem;margin-bottom:6px}
+  /* Default: plain white input, dark text */
+  #action {
+    background: rgba(255,255,255,0.06) !important;
+    color: #ffffff !important;                 /* near-black text */
+    border: 1px solid #ffffff !important;
+  }
+  /* Placeholder color on white */
+  #action::placeholder {
+    color: rgba(255,255,255,0.55);
+  }
+  /* When mic is recording, pulse the input */
+  #action.listening-live {
+    border-color: rgba(255,255,255,0.75) !important;
+    box-shadow: 0 0 0 0 rgba(255,255,255,0.35);
+    animation: pulseGlow 900ms ease-in-out infinite;
+  }
+  @keyframes pulseGlow {
+    0%   { box-shadow: 0 0 0 0 rgba(255,255,255,0.35); }
+    60%  { box-shadow: 0 0 12px 8px rgba(255,255,255,0.18); }
+    100% { box-shadow: 0 0 0 0 rgba(255,255,255,0.0); }
+  }
+</style>
+<link rel="stylesheet" href="/css/game.css?v=1">
+</head>
+<script src="/js/energy.ui.js"></script>
+<script>
+  (function () {
+    var modal = document.getElementById('store-modal');
+    if (!modal) return;
+    modal.addEventListener('click', function (e) {
+      if (e.target === modal) modal.style.display = 'none';
+    });
+  })();
+</script>
+<body>
+    <div id="energy-hud" style="position:fixed; top:10px; left:50%; transform:translateX(-50%); z-index:2000; width:320px; font-family:system-ui, sans-serif; pointer-events:auto;">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; background:rgba(0,0,0,0.55); border-radius:10px; padding:6px 10px; pointer-events:auto;">
+        <span style="font-weight:600;">Energy</span>
+        <span id="energy-text" style="font-variant-numeric: tabular-nums;">-- / --</span>
+      </div>
+      <div style="height:12px; background:rgba(255,255,255,0.12); border-radius:8px; overflow:hidden; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08); pointer-events:auto;">
+        <div id="energy-fill" style="height:100%; width:0%; background:linear-gradient(90deg,#22c55e,#84cc16); transition:width 250ms ease;"></div>
+      </div>
+      <div id="energy-sub" style="margin-top:6px; font-size:12px; color:#e5e7eb; text-align:center; letter-spacing:0.2px; display:flex; align-items:center; justify-content:center; gap:10px; pointer-events:auto;">
+        <span id="energy-tier-label">Tier: --</span>
+        <span id="energy-refill">Refill: --</span>
+        <span id="energy-boost" style="display:none; color:#f59e0b;">+20% Gift</span>
+        <span style="flex:0 0 12px;"></span>
+        <div style="display:flex; gap:8px;">
+          <button id="energy-watch-ad" type="button"
+                  style="font-size:12px; padding:4px 8px; border-radius:8px; border:1px solid rgba(255,255,255,0.15); background:rgba(34,197,94,0.15); color:#e5e7eb; cursor:pointer;">
+            Watch ad (+5)
+          </button>
+          <button id="energy-claim-daily" type="button"
+                  style="font-size:12px; padding:4px 8px; border-radius:8px; border:1px solid rgba(255,255,255,0.15); background:rgba(255,255,255,0.08); color:#e5e7eb; cursor:pointer;">
+            Claim daily
+          </button>
+          <button id="open-store" type="button"
+        onclick="document.getElementById('store-modal').style.display='flex'"
+        style="font-size:12px; padding:4px 10px; border-radius:8px; border:1px solid rgba(255,255,255,0.18); background:rgba(59,130,246,0.18); color:#e5e7eb; cursor:pointer;">
+  Store
+</button>
+        </div>
+      </div>
+    </div>  
+  <!-- history UI in the same place you had it -->
+  <button id="historyBtn" class="btn-ui" type="button" style="position:fixed;top:10px;right:10px;z-index:1001">History</button>
+  <div id="historyModal" class="modal hidden" aria-hidden="true"></div>
+
+  <!-- Top Bar -->
+  <header class="app-topbar">
+    <div class="topbar-inner">
+      <div class="brand">AI Text Adventure</div>
+
+      <!-- Auth widget -->
+      <div class="auth-widget">
+        <button id="auth-toggle-btn" class="auth-button">Sign in / Sign up</button>
+
+        <div id="auth-panel" class="auth-panel">
+          <div class="auth-tabs">
+            <div id="tab-login" class="auth-tab active">Login</div>
+            <div id="tab-signup" class="auth-tab">Sign Up</div>
+          </div>
+
+          <form id="form-login" class="auth-form active">
+            <input id="login-email" type="email" placeholder="Email" autocomplete="username" required />
+            <input id="login-password" type="password" placeholder="Password" autocomplete="current-password" required />
+            <button class="auth-submit" type="submit">Login</button>
+          </form>
+
+          <form id="form-signup" class="auth-form">
+            <input id="signup-email" type="email" placeholder="Email" autocomplete="username" required />
+            <input id="signup-password" type="password" placeholder="Password" autocomplete="new-password" required />
+            <button class="auth-submit" type="submit">Create Account</button>
+          </form>
+        </div>
+
+        <div id="user-chip" class="user-chip">
+          <span class="user-email" id="user-email">Signed in</span>
+          <button id="signout-btn" class="auth-button">Sign out</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main -->
+  <main class="app-main">
+    <div class="page-wrap">
+      <!-- Start flow (same layout) -->
+      <section class="controls">
+        <div class="hint">Pick a genre and click <b>Start</b> to create a new adventure.</div>
+        <div class="row">
+          <label for="genre-select">Genre:</label>
+          <select id="genre-select" name="genre" required>
+            <option value="" disabled selected>Loading genres...</option>
+          </select>
+          <button id="btn-start" type="button">Start</button>
+        </div>
+      </section>
+
+      <!-- keep your single story block (remove duplicates) -->
+      <div id="main-quest" class="badge"></div>
+      <div id="ai-loader" class="ai-loader" aria-live="polite">
+        <div class="ai-dot"></div><div class="ai-dot"></div><div class="ai-dot"></div>
+      </div>
+
+      <section class="story-area">
+        <h2 class="section-title">Story</h2>
+        <div id="log" class="story-output"></div>
+        <!-- Generated images will be appended here -->
+<div id="message-tail" class="story-output" aria-live="polite"></div>
+      </section>
+
+      <section class="controls">
+        <div class="row">
+          <button id="btn-mic" type="button"
+        style="margin-right:8px; padding:6px 10px; border-radius:8px; border:1px solid rgba(255,255,255,0.15); background:rgba(255,255,255,0.06); color:#e5e7eb; cursor:pointer;">
+  🎤 Mic
+        </button>
+<span id="mic-indicator" style="display:none; margin-left:8px; padding:2px 8px; border-radius:999px; font-size:12px; letter-spacing:.3px; background:#ef44440f; color:#ef4444; border:1px solid #ef44441a;">
+  ● Listening
+</span>
+
+<button id="btn-tts" type="button"
+        style="margin-right:8px; padding:6px 10px; border-radius:8px; border:1px solid rgba(255,255,255,0.15); background:rgba(255,255,255,0.06); color:#e5e7eb; cursor:pointer;">
+  🔊 TTS
+</button>
+          <label style="display:inline-flex;align-items:center;gap:6px;margin:0 6px;opacity:.5;" title="Buy in Store to unlock">
+  <input id="pref-sarcasm" type="checkbox" disabled /> Sarcasm
+</label>
+<label style="display:inline-flex;align-items:center;gap:6px;margin:0 6px;opacity:.5;" title="Buy in Store to unlock">
+  <input id="pref-gore" type="checkbox" disabled /> graphic
+</label>
+<label style="display:inline-flex;align-items:center;gap:6px;margin:0 6px;opacity:.5;" title="Buy in Store to unlock">
+  <input id="pref-adult" type="checkbox" disabled /> 18+
+</label>
+          <input id="action" placeholder='Type an action, e.g. "look around"' />
+          <button id="send" type="button">Send</button>
+          <button id="saveStoryBtn">Save story to history</button>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- Scripts: keep your inline helpers so look/behavior match, but remove duplicates -->
+  <script>
+    window.Typewriter=(function(){const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+      async function typeText(el,fullText,opts={}){const cps=Math.max(1,opts.cps||45),delay=1000/cps;el.textContent='';
+        for(let i=0;i<fullText.length;i++){el.textContent+=fullText[i];await sleep(delay);}}
+      return { typeText };
+    })();
+    (function(){const byId=id=>document.getElementById(id);
+            function ensureTailWrapper(){
+        let tail = byId('message-tail');
+        if (!tail) {
+          // create it if someone removed it
+          tail = document.createElement('div');
+          tail.id = 'message-tail';
+          tail.className = 'story-output';
+          const images = byId('story-images');
+          if (images && images.parentNode) {
+            images.parentNode.insertBefore(tail, images.nextSibling);
+          } else {
+            // fallback: place under the old #log container
+            const log = byId('log');
+            (log && log.parentNode ? log.parentNode : document.body).appendChild(tail);
+          }
+        } else {
+          // make sure it stays AFTER the image area
+          const images = byId('story-images');
+          if (images && images.nextSibling !== tail) {
+            images.parentNode.insertBefore(tail, images.nextSibling);
+          }
+        }
+        return tail;
+      }
+
+async function renderStory(resp, opts = { cps: 45 }) {
+  // allow plain strings or full objects
+  // allow plain strings OR full objects; if a plain string arrived,
+// try to pair it with the most recent /api/next JSON so we can also show image_url
+if (typeof resp === 'string') {
+  const last = window._lastNextResponse;
+  resp = (last && last.reply === resp) ? last : { reply: resp };
+}
+
+  const wrap = ensureTailWrapper(); if (!wrap) return;
+
+  // 1) AI text line
+  const textLine = document.createElement('div');
+  textLine.className = 'line ai';
+  wrap.appendChild(textLine);
+  await window.Typewriter.typeText(textLine, (resp && resp.reply) ? resp.reply : '', opts);
+
+  // 2) If this turn has an image, place it RIGHT UNDER the AI text
+  if (resp && resp.image_url) {
+    const imgWrap = document.createElement('div');
+    imgWrap.className = 'scene-image';
+    imgWrap.style.margin = '12px 0';
+    const img = document.createElement('img');
+    img.src = resp.image_url;
+    img.alt = 'AI scene';
+    img.style.maxWidth = '100%';
+    img.style.height = 'auto';
+    img.style.borderRadius = '8px';
+    imgWrap.appendChild(img);
+    wrap.appendChild(imgWrap);
+  }
+
+  wrap.scrollTop = wrap.scrollHeight;
+}
+
+
+      function showLoader(){const el=byId('ai-loader');if(el)el.style.display='inline-flex'}
+      function hideLoader(){const el=byId('ai-loader');if(el)el.style.display='none'}
+      async function withLoader(task){showLoader();try{return await task();}finally{hideLoader();}}
+      window.AIUX={renderStory,renderUser,withLoader,showLoader,hideLoader};
+      function renderUser(text){
+   const wrap=ensureTailWrapper(); if(!wrap) return;
+  const line=document.createElement('div');
+  line.className='line user';
+  line.textContent='You: '+(text||'');
+  wrap.appendChild(line);
+  wrap.scrollTop = wrap.scrollHeight;
+}
+
+    })();
+  </script>
+<!-- Supabase UMD + client (placeholders required) -->
+<script>
+  (function () {
+    const s = document.createElement('script');
+    s.src = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js";
+    s.onload = () => {
+      const SUPABASE_URL  = 'https://jxmjnqfwjrzjmfmfgalg.supabase.co';       // TODO: paste from Supabase Dashboard
+      const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp4bWpucWZ3anJ6am1mbWZnYWxnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgyNDMxODMsImV4cCI6MjA3MzgxOTE4M30.f34Xj1Xb7FUxrkq0yl-Ocmq7s2USkFQKWZHzAfGmhUs';  // TODO: paste from Supabase Dashboard
+      if (!SUPABASE_URL || !SUPABASE_ANON) {
+        console.warn('[Auth] Missing Supabase URL/Anon key');
+        return;
+      }
+      window.supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+
+      window.SupabaseAuth = {
+        async signUp(email, password) {
+          const { data, error } = await window.supabaseClient.auth.signUp({ email, password });
+          if (error) throw error; return data;
+        },
+        async signIn(email, password) {
+          const { data, error } = await window.supabaseClient.auth.signInWithPassword({ email, password });
+          if (error) throw error; return data;
+        },
+        async signOut() {
+          const { error } = await window.supabaseClient.auth.signOut();
+          if (error) throw error;
+        },
+        async getSession() {
+          const { data } = await window.supabaseClient.auth.getSession();
+          return data.session || null;
+        },
+        async getUser() {
+          const { data } = await window.supabaseClient.auth.getUser();
+          return data.user || null;
+        }
+      };
+      // wait helper so listeners don’t run before Supabase is ready
+window.ensureSupabaseReady = function () {
+  return new Promise((resolve, reject) => {
+    let tries = 50;
+    const iv = setInterval(() => {
+      if (window.SupabaseAuth?.signIn) { clearInterval(iv); resolve(); }
+      else if (--tries <= 0) { clearInterval(iv); reject(new Error('Supabase not initialized')); }
+    }, 100);
+  });
+};
+      console.log('[Auth] Supabase ready');
+    };
+    document.head.appendChild(s);
+  })();
+</script>
+  <!-- Auth widget (inline to keep your original UI behavior) -->
+  <script>
+    (function(){
+      const $=(s,r=document)=>r.querySelector(s);
+      const toggleBtn=$('#auth-toggle-btn'), panel=$('#auth-panel');
+      const tabLogin=$('#tab-login'), tabSignup=$('#tab-signup');
+      const formLogin=$('#form-login'), formSignup=$('#form-signup');
+      const userChip=$('#user-chip'), userEmailSpan=$('#user-email'), signoutBtn=$('#signout-btn');
+
+      function show(el){el.style.display='block'}; function hide(el){el.style.display='none'};
+      function setTab(which){const L=which==='login'; tabLogin.classList.toggle('active',L); tabSignup.classList.toggle('active',!L);
+        formLogin.classList.toggle('active',L); formSignup.classList.toggle('active',!L);}
+      function getToken(){return localStorage.getItem('token')}; function setToken(t){localStorage.setItem('token',t)};
+      function clearToken(){localStorage.removeItem('token')}; function getEmail(){return localStorage.getItem('email')};
+      function setEmail(e){localStorage.setItem('email',e)}; function clearEmail(){localStorage.removeItem('email')};
+      function loggedInUI(email){hide(toggleBtn);hide(panel);userChip.style.display='inline-flex';userEmailSpan.textContent=email||'Signed in'}
+      function loggedOutUI(){show(toggleBtn);hide(panel);userChip.style.display='none'}
+
+      async function postJSON(url, body){
+        const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});
+        let text=''; try{text=await res.text()}catch{}
+        let data=null; try{data=text?JSON.parse(text):null}catch{}
+        if(!res.ok){ const msg=(data&&(data.message||data.error))||text||`Request failed: ${res.status}`; throw new Error(msg); }
+        return data||{};
+      }
+
+      toggleBtn?.addEventListener('click',()=>panel.style.display==='block'?hide(panel):show(panel));
+      tabLogin?.addEventListener('click',()=>setTab('login'));
+      tabSignup?.addEventListener('click',()=>setTab('signup'));
+      // Login (uses Supabase + waits for readiness)
+formLogin?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const email = $('#login-email').value.trim();
+  const password = $('#login-password').value;
+  try {
+    if (window.ensureSupabaseReady) { await window.ensureSupabaseReady(); }
+    await window.SupabaseAuth.signIn(email, password);
+    const sess = await window.SupabaseAuth.getSession();
+    const token = sess?.access_token || null;
+    if (token) setToken(token);
+    setEmail(email);
+    loggedInUI(email);
+    document.dispatchEvent(new CustomEvent('auth:login', { detail: { email } }));
+  } catch (err) {
+    alert(err?.message || 'Login failed');
+  }
+});
+
+// Sign up (uses Supabase + waits for readiness)
+formSignup?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const email = $('#signup-email').value.trim();
+  const password = $('#signup-password').value;
+  try {
+    if (window.ensureSupabaseReady) { await window.ensureSupabaseReady(); }
+    await window.SupabaseAuth.signUp(email, password);
+    await window.SupabaseAuth.signIn(email, password); // auto sign-in
+    const sess = await window.SupabaseAuth.getSession();
+    const token = sess?.access_token || null;
+    if (token) setToken(token);
+    setEmail(email);
+    loggedInUI(email);
+    document.dispatchEvent(new CustomEvent('auth:login', { detail: { email } }));
+  } catch (err) {
+    alert(err?.message || 'Sign up failed');
+  }
+});
+
+// Sign out (uses Supabase + waits for readiness)
+signoutBtn?.addEventListener('click', async () => {
+  try {
+    if (window.ensureSupabaseReady) { await window.ensureSupabaseReady(); }
+    await window.SupabaseAuth.signOut();
+  } catch {}
+  clearToken(); clearEmail(); loggedOutUI();
+  document.dispatchEvent(new CustomEvent('auth:logout'));
+});
+
+      (function init(){setTab('login');const t=getToken(),e=getEmail();(t&&e)?loggedInUI(e):loggedOutUI();})();
+    })();
+  </script>
+
+  <!-- History button logic -->
+  <script src="/js/history.js" defer></script>
+
+  <!-- Your game logic last; keep your version param if you use it -->
+  <script src="/game.js?v=15"></script>
+  <script>
+  // Read /api/store and paint labels on store buttons
+  (function () {
+    function fmt(currency, n, beta) {
+      if (beta) return 'Free (Beta)';
+      if (typeof n !== 'number' || !isFinite(n)) return '';
+      return (currency === 'USD' ? '$' : (currency + ' ')) + n.toFixed(2);
+    }
+    function setTextWithPrice(btn, baseText, priceLabel) {
+      // Preserve the base call-to-action but show price at the end
+      btn.textContent = baseText + (priceLabel ? ' — ' + priceLabel : '');
+    }
+    async function applyPrices() {
+      try {
+        const r = await fetch('/api/store', { cache: 'no-store' });
+        const j = await r.json();
+        const beta = !!j.beta;
+        const cur  = j.currency || 'USD';
+        const T = j.tiers || {};
+        const O = j.one_time || {};
+
+        // PASSES
+        document.querySelectorAll('button.btn-upgrade[data-sku="standard"]').forEach(b=>{
+          setTextWithPrice(b, 'Upgrade to Standard — no ads, faster refill', fmt(cur, T.standard, beta));
+        });
+        document.querySelectorAll('button.btn-upgrade[data-sku="premium"]').forEach(b=>{
+          setTextWithPrice(b, 'Upgrade to Premium — mic + TTS unlocked', fmt(cur, T.premium, beta));
+        });
+        document.querySelectorAll('button.btn-upgrade[data-sku="ultimate"]').forEach(b=>{
+          setTextWithPrice(b, 'Upgrade to Ultimate — scene image every few turns', fmt(cur, T.ultimate, beta));
+        });
+
+        // ONE-TIME
+        document.querySelectorAll('button.btn-one[data-one="remove_ads"]').forEach(b=>{
+          setTextWithPrice(b, 'Remove Ads (one-time)', fmt(cur, O.remove_ads, beta));
+        });
+        document.querySelectorAll('button.btn-one[data-one="mic"]').forEach(b=>{
+          setTextWithPrice(b, 'Unlock Mic (one-time)', fmt(cur, O.mic, beta));
+        });
+        document.querySelectorAll('button.btn-one[data-one="tts"]').forEach(b=>{
+          setTextWithPrice(b, 'Unlock TTS (one-time)', fmt(cur, O.tts, beta));
+        });
+        document.querySelectorAll('button.btn-one[data-one="mic_tts_bundle"]').forEach(b=>{
+          setTextWithPrice(b, 'Unlock Mic + TTS (bundle)', fmt(cur, O.mic_tts_bundle, beta));
+        });
+        document.querySelectorAll('button.btn-one[data-one="sarcasm"]').forEach(b=>{
+          setTextWithPrice(b, 'Unlock Sarcasm (one-time)', fmt(cur, O.sarcasm, beta));
+        });
+        document.querySelectorAll('button.btn-one[data-one="gore"]').forEach(b=>{
+          setTextWithPrice(b, 'Unlock Graphic (one-time)', fmt(cur, O.gore, beta));
+        });
+        document.querySelectorAll('button.btn-one[data-one="adult"]').forEach(b=>{
+          setTextWithPrice(b, 'Unlock 18+ (one-time)', fmt(cur, O.adult, beta));
+        });
+        document.querySelectorAll('#btn-instant-refill').forEach(b=>{
+          setTextWithPrice(b, 'Instant Refill (full bar) — extends +20% gift', fmt(cur, O.refill, beta));
+        });
+
+        // Also update the tone toggle title to match rename + gate hint
+        const goreToggle = document.getElementById('pref-gore');
+        if (goreToggle) {
+          const label = goreToggle.closest('label');
+          if (label) { label.childNodes[label.childNodes.length - 1].textContent = ' Graphic'; }
+          goreToggle.title = 'Buy Graphic in Store to enable';
+        }
+      } catch (e) {
+        console.warn('[store] failed to load /api/store', e);
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', applyPrices);
+  })();
+</script>
+
+<script>
+  document.addEventListener('DOMContentLoaded', async () => {
+    const sel = document.querySelector('#genre-select');
+    if (!sel) return;
+
+    sel.innerHTML = '';
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = 'Loading genres...';
+    placeholder.disabled = true;
+    placeholder.selected = true;
+    sel.appendChild(placeholder);
+
+    try {
+      const res = await fetch('/api/genres');
+      const data = await res.json();
+      sel.innerHTML = '<option value="">— pick —</option>';
+
+      if (data.ok && Array.isArray(data.genres)) {
+        data.genres.forEach(slug => {
+          const opt = document.createElement('option');
+          opt.value = slug;
+          opt.textContent = slug.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+          sel.appendChild(opt);
+        });
+      }
+    } catch (err) {
+      sel.innerHTML = '<option value="">Failed to load genres</option>';
+    }
+  });
+</script>
+
+  <!-- Store / Upgrades Modal -->
+<div id="store-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:9999; align-items:center; justify-content:center;">
+  <div style="background:#0b1220; border:1px solid rgba(255,255,255,0.12); border-radius:12px; width:560px; max-width:94%; box-shadow:0 12px 40px rgba(0,0,0,0.6);">
+    <div style="padding:14px 16px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid rgba(255,255,255,0.08);">
+      <div style="font-weight:600; color:#e5e7eb;">Store & Upgrades</div>
+      <button id="close-store" type="button"
+        onclick="document.getElementById('store-modal').style.display='none'"
+        style="font-size:14px; padding:4px 10px; border-radius:8px; border:1px solid rgba(255,255,255,0.15); background:rgba(255,255,255,0.06); color:#e5e7eb; cursor:pointer;">
+  Close
+</button>
+    </div>
+
+    <div style="padding:14px 16px; display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+      <!-- Pass Upgrades -->
+      <div style="border:1px solid rgba(255,255,255,0.08); border-radius:10px; padding:12px;">
+        <div style="font-weight:600; margin-bottom:8px; color:#cbd5e1;">Passes</div>
+        <div style="display:grid; gap:8px;">
+          <button data-sku="standard" class="btn-upgrade" type="button"
+        onclick="(async(b)=>{b.disabled=true;const t=b.textContent;b.textContent='Processing...';try{const r=await fetch('/api/purchases/confirm',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({receiptId:'dev-'+Date.now(),kind:'subscription',sku:'standard',giftDays:7})});console.log(await r.json());if(window.refreshEnergyUI)refreshEnergyUI();if(window.refreshEntitlements)refreshEntitlements();b.textContent='Done!';setTimeout(()=>b.textContent=t,900)}catch(e){console.error(e);b.textContent='Failed';setTimeout(()=>b.textContent=t,1200)}finally{b.disabled=false}})(this)"
+        style="text-align:left; padding:8px 10px; border-radius:8px; border:1px solid rgba(255,255,255,0.12); background:rgba(255,255,255,0.04); color:#e5e7eb; cursor:pointer;">
+  Upgrade to Standard — no ads, faster refill
+</button>
+<button data-sku="premium" class="btn-upgrade" type="button"
+        onclick="(async(b)=>{b.disabled=true;const t=b.textContent;b.textContent='Processing...';try{const r=await fetch('/api/purchases/confirm',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({receiptId:'dev-'+Date.now(),kind:'subscription',sku:'premium',giftDays:7})});console.log(await r.json());if(window.refreshEnergyUI)refreshEnergyUI();if(window.refreshEntitlements)refreshEntitlements();b.textContent='Done!';setTimeout(()=>b.textContent=t,900)}catch(e){console.error(e);b.textContent='Failed';setTimeout(()=>b.textContent=t,1200)}finally{b.disabled=false}})(this)"
+        style="text-align:left; padding:8px 10px; border-radius:8px; border:1px solid rgba(255,255,255,0.12); background:rgba(255,255,255,0.04); color:#e5e7eb; cursor:pointer;">
+  Upgrade to Premium — mic + TTS unlocked
+</button>
+<button data-sku="ultimate" class="btn-upgrade" type="button"
+        onclick="(async(b)=>{b.disabled=true;const t=b.textContent;b.textContent='Processing...';try{const r=await fetch('/api/purchases/confirm',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({receiptId:'dev-'+Date.now(),kind:'subscription',sku:'ultimate',giftDays:7})});console.log(await r.json());if(window.refreshEnergyUI)refreshEnergyUI();if(window.refreshEntitlements)refreshEntitlements();b.textContent='Done!';setTimeout(()=>b.textContent=t,900)}catch(e){console.error(e);b.textContent='Failed';setTimeout(()=>b.textContent=t,1200)}finally{b.disabled=false}})(this)"
+        style="text-align:left; padding:8px 10px; border-radius:8px; border:1px solid rgba(255,255,255,0.12); background:rgba(255,255,255,0.04); color:#e5e7eb; cursor:pointer;">
+  Upgrade to Ultimate — scene image every few turns
+</button>
+        </div>
+      </div>
+
+      <!-- One-time unlocks & refill -->
+      <div style="border:1px solid rgba(255,255,255,0.08); border-radius:10px; padding:12px;">
+        <div style="font-weight:600; margin-bottom:8px; color:#cbd5e1;">Unlocks & Refill</div>
+        <div style="display:grid; gap:8px;">
+          <button data-one="remove_ads" class="btn-one" type="button"
+        onclick="(async(b)=>{b.disabled=true;const t=b.textContent;b.textContent='Processing...';try{const r=await fetch('/api/purchases/confirm',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({receiptId:'dev-'+Date.now(),kind:'one_time',sku:'remove_ads',giftDays:7})});console.log(await r.json());if(window.refreshEnergyUI)refreshEnergyUI();if(window.refreshEntitlements)refreshEntitlements();b.textContent='Unlocked!';setTimeout(()=>b.textContent=t,1000)}catch(e){console.error(e);b.textContent='Failed';setTimeout(()=>b.textContent=t,1200)}finally{b.disabled=false}})(this)"
+        style="text-align:left; padding:8px 10px; border-radius:8px; border:1px solid rgba(255,255,255,0.12); background:rgba(255,255,255,0.04); color:#e5e7eb; cursor:pointer;">
+        Remove Ads (one-time)
+        </button>
+        <button data-one="mic" class="btn-one" type="button"
+        onclick="(async(b)=>{b.disabled=true;const t=b.textContent;b.textContent='Processing...';try{const r=await fetch('/api/purchases/confirm',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({receiptId:'dev-'+Date.now(),kind:'one_time',sku:'mic',giftDays:7})});console.log(await r.json());if(window.refreshEnergyUI)refreshEnergyUI();if(window.refreshEntitlements)refreshEntitlements();b.textContent='Unlocked!';setTimeout(()=>b.textContent=t,1000)}catch(e){console.error(e);b.textContent='Failed';setTimeout(()=>b.textContent=t,1200)}finally{b.disabled=false}})(this)"
+        style="text-align:left; padding:8px 10px; border-radius:8px; border:1px solid rgba(255,255,255,0.12); background:rgba(255,255,255,0.04); color:#e5e7eb; cursor:pointer;">
+        Unlock Mic (one-time)
+      </button>
+      <button data-one="tts" class="btn-one" type="button"
+      onclick="(async(b)=>{b.disabled=true;const t=b.textContent;b.textContent='Processing...';try{const r=await fetch('/api/purchases/confirm',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({receiptId:'dev-'+Date.now(),kind:'one_time',sku:'tts',giftDays:7})});console.log(await r.json());if(window.refreshEnergyUI)refreshEnergyUI();if(window.refreshEntitlements)refreshEntitlements();b.textContent='Unlocked!';setTimeout(()=>b.textContent=t,1000)}catch(e){console.error(e);b.textContent='Failed';setTimeout(()=>b.textContent=t,1200)}finally{b.disabled=false}})(this)"
+      style="text-align:left; padding:8px 10px; border-radius:8px; border:1px solid rgba(255,255,255,0.12); background:rgba(255,255,255,0.04); color:#e5e7eb; cursor:pointer;">
+      Unlock TTS (one-time)
+      </button>
+      <button data-one="mic_tts_bundle" class="btn-one" type="button"
+      onclick="(async(b)=>{b.disabled=true;const t=b.textContent;b.textContent='Processing...';try{const r=await fetch('/api/purchases/confirm',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({receiptId:'dev-'+Date.now(),kind:'one_time',sku:'mic_tts_bundle',giftDays:7})});console.log(await r.json());if(window.refreshEnergyUI)refreshEnergyUI();if(window.refreshEntitlements)refreshEntitlements();b.textContent='Unlocked!';setTimeout(()=>b.textContent=t,1000)}catch(e){console.error(e);b.textContent='Failed';setTimeout(()=>b.textContent=t,1200)}finally{b.disabled=false}})(this)"
+      style="text-align:left; padding:8px 10px; border-radius:8px; border:1px solid rgba(255,255,255,0.12); background:rgba(255,255,255,0.04); color:#e5e7eb; cursor:pointer;">
+      Unlock Mic + TTS (bundle)
+      </button>
+      <button data-one="sarcasm" class="btn-one" type="button"
+  onclick="(async(b)=>{b.disabled=true;const t=b.textContent;b.textContent='Processing...';try{const r=await fetch('/api/purchases/confirm',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({receiptId:Date.now()+'' ,kind:'one_time',sku:'sarcasm',giftDays:7})});const j=await r.json();if (window.refreshEntitlements) window.refreshEntitlements();b.textContent=j.ok?'Unlocked!':'Failed';setTimeout(()=>b.textContent=t,1000)}catch(e){b.textContent='Failed';setTimeout(()=>b.textContent=t,1200)}finally{b.disabled=false}})(this)"
+  style="text-align:left; padding:8px 10px; border-radius:8px; border:1px solid rgba(255,255,255,0.08); background:rgba(255,255,255,0.04); color:#e5e7eb; cursor:pointer;">
+  Unlock Sarcasm (one-time)
+</button>
+
+<button data-one="gore" class="btn-one" type="button"
+  onclick="(async(b)=>{b.disabled=true;const t=b.textContent;b.textContent='Processing...';try{const r=await fetch('/api/purchases/confirm',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({receiptId:Date.now()+'' ,kind:'one_time',sku:'gore',giftDays:7})});const j=await r.json();if (window.refreshEntitlements) window.refreshEntitlements();b.textContent=j.ok?'Unlocked!':'Failed';setTimeout(()=>b.textContent=t,1000)}catch(e){b.textContent='Failed';setTimeout(()=>b.textContent=t,1200)}finally{b.disabled=false}})(this)"
+  style="text-align:left; padding:8px 10px; border-radius:8px; border:1px solid rgba(255,255,255,0.08); background:rgba(255,255,255,0.04); color:#e5e7eb; cursor:pointer;">
+  Unlock graphic (one-time)
+</button>
+
+<button data-one="adult" class="btn-one" type="button"
+  onclick="(async(b)=>{b.disabled=true;const t=b.textContent;b.textContent='Processing...';try{const r=await fetch('/api/purchases/confirm',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({receiptId:Date.now()+'' ,kind:'one_time',sku:'adult',giftDays:7})});const j=await r.json();if (window.refreshEntitlements) window.refreshEntitlements();b.textContent=j.ok?'Unlocked!':'Failed';setTimeout(()=>b.textContent=t,1000)}catch(e){b.textContent='Failed';setTimeout(()=>b.textContent=t,1200)}finally{b.disabled=false}})(this)"
+  style="text-align:left; padding:8px 10px; border-radius:8px; border:1px solid rgba(255,255,255,0.08); background:rgba(255,255,255,0.04); color:#e5e7eb; cursor:pointer;">
+  Unlock 18+ (one-time)
+</button>
+      <button id="btn-instant-refill" type="button"
+      onclick="(async(b)=>{b.disabled=true;const t=b.textContent;b.textContent='Refilling...';try{const r=await fetch('/api/purchases/refill',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({receiptId:'dev-'+Date.now(),giftDays:7})});console.log(await r.json());if(window.refreshEnergyUI)refreshEnergyUI();b.textContent='Full!';setTimeout(()=>b.textContent=t,1000)}catch(e){console.error(e);b.textContent='Failed';setTimeout(()=>b.textContent=t,1200)}finally{b.disabled=false}})(this)"
+      style="text-align:left; padding:8px 10px; border-radius:8px; border:1px solid rgba(34,197,94,0.35); background:rgba(34,197,94,0.15); color:#e5e7eb; cursor:pointer;">
+      Instant Refill (full bar) — extends +20% gift
+      </button>  
+        </div>
+      </div>
+    </div>
+
+    <div style="padding:12px 16px; border-top:1px solid rgba(255,255,255,0.08); color:#94a3b8; font-size:12px;">
+      Every purchase extends your +20% capacity gift. Mic/TTS show as buttons on the composer if unlocked or on eligible tiers.
+    </div>
+  </div>
+</div>
+<script>
+  (function () {
+    var modal = document.getElementById('store-modal');
+    var closeBtn = document.getElementById('close-store');
+    if (!modal) return;
+
+    // Backdrop click closes
+    modal.addEventListener('click', function (e) {
+      if (e.target === modal) modal.style.display = 'none';
+    });
+
+    // ESC key closes
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && modal.style.display !== 'none') {
+        modal.style.display = 'none';
+      }
+    });
+
+    // Close button safety (in case inline was removed later)
+    if (closeBtn) {
+      closeBtn.addEventListener('click', function () {
+        modal.style.display = 'none';
+      });
+    }
+  })();
+</script>
+<script>
+// ====== Store-only UI helpers: Ad look + Daily/Ad countdowns (no game.js edits) ======
+(function () {
+  // IDs this relies on (your buttons already use these):
+  //  - Watch Ad:       #energy-watch-ad
+  //  - Claim Daily:    #energy-claim-daily
+
+  const DAILY_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24h
+  const AD_COOLDOWN_MS    = 10 * 60 * 1000;      // 10m (change if your server uses different)
+
+  function $(id){ return document.getElementById(id); }
+
+  function fmtHMS(ms) {
+    if (ms < 0) ms = 0;
+    const s = Math.floor(ms / 1000);
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    if (h > 0) return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+    return `${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+  }
+
+  function styleAdByTier(tier) {
+    const adBtn = $('energy-watch-ad');
+    if (!adBtn) return;
+    const isFree = String(tier || '').toLowerCase() === 'free';
+    if (isFree) {
+      // normal Free look
+      adBtn.disabled = false;
+      adBtn.style.opacity = '1';
+      adBtn.style.cursor = 'pointer';
+      adBtn.title = 'Watch an ad to gain energy';
+      adBtn.style.background = 'rgba(34,197,94,0.15)';
+      adBtn.style.border = '1px solid rgba(255,255,255,0.15)';
+      adBtn.style.backgroundImage = 'none';
+      adBtn.style.backgroundBlendMode = '';
+    } else {
+      // darker + diagonal red slash (locked)
+      adBtn.disabled = true;
+      adBtn.style.opacity = '0.7';
+      adBtn.style.cursor = 'not-allowed';
+      adBtn.title = 'Ads removed on your tier';
+      adBtn.style.background = 'rgba(31,41,55,0.7)';
+      adBtn.style.border = '1px solid rgba(255,255,255,0.12)';
+      adBtn.style.backgroundImage =
+        'repeating-linear-gradient(-45deg, rgba(239,68,68,0.85) 0 3px, rgba(31,41,55,0.7) 3px 12px)';
+      adBtn.style.backgroundBlendMode = 'overlay';
+      // keep the label stable
+      adBtn.textContent = 'Watch ad (+5)';
+    }
+  }
+
+  async function refreshCooldownsAndAd() {
+    try {
+      const r = await fetch('/api/player', { credentials: 'include' });
+      const j = await r.json();
+      const now = Date.now();
+
+      // Always style Ad button by tier first
+      styleAdByTier(j.tier);
+
+      const dailyBtn = $('energy-claim-daily');
+      const adBtn    = $('energy-watch-ad');
+
+      // DAILY countdown
+      let dailyLeft = 0;
+      if (j.lastDailyGiftAt) {
+        const last = new Date(j.lastDailyGiftAt).getTime();
+        dailyLeft = (last + DAILY_COOLDOWN_MS) - now;
+      }
+      if (dailyBtn) {
+        if (dailyLeft > 0) {
+          dailyBtn.textContent = `Claim daily (${fmtHMS(dailyLeft)})`;
+          dailyBtn.disabled = true;
+          dailyBtn.style.opacity = '0.7';
+          dailyBtn.style.cursor = 'not-allowed';
+          dailyBtn.title = 'Daily will be ready soon';
+        } else {
+          dailyBtn.textContent = 'Claim daily';
+          dailyBtn.disabled = false;
+          dailyBtn.style.opacity = '1';
+          dailyBtn.style.cursor = 'pointer';
+          dailyBtn.title = 'Claim your daily boost';
+        }
+      }
+
+      // AD cooldown (only matters if Free; non-Free is already locked)
+      const isFree = String(j.tier || '').toLowerCase() === 'free';
+      if (adBtn && isFree) {
+        let adLeft = 0;
+        if (j.lastAdClaimAt) {
+          const lastAd = new Date(j.lastAdClaimAt).getTime();
+          adLeft = (lastAd + AD_COOLDOWN_MS) - now;
+        }
+        if (adLeft > 0) {
+          adBtn.textContent = `Watch ad (+5) (${fmtHMS(adLeft)})`;
+          adBtn.disabled = true;
+          adBtn.style.opacity = '0.7';
+          adBtn.style.cursor = 'not-allowed';
+          adBtn.title = 'Ad available soon';
+        } else {
+          adBtn.textContent = 'Watch ad (+5)';
+          adBtn.disabled = false;
+          adBtn.style.opacity = '1';
+          adBtn.style.cursor = 'pointer';
+          adBtn.title = 'Watch an ad to gain energy';
+          // restore Free look in case it was cooling down
+          adBtn.style.background = 'rgba(34,197,94,0.15)';
+          adBtn.style.border = '1px solid rgba(255,255,255,0.15)';
+          adBtn.style.backgroundImage = 'none';
+          adBtn.style.backgroundBlendMode = '';
+        }
+      }
+    } catch (e) {
+      console.warn('UI cooldown/ad refresh failed:', e);
+    }
+  }
+
+  // Run on load and tick every second to update labels
+  document.addEventListener('DOMContentLoaded', () => {
+    refreshCooldownsAndAd();
+    if (!window._uiCoolTimer) {
+      window._uiCoolTimer = setInterval(refreshCooldownsAndAd, 1000);
+    }
+  });
+
+  // Expose so other code (store actions) can force-refresh after purchases
+  window.refreshCooldowns = refreshCooldownsAndAd;
+  window.styleAdByTier = styleAdByTier;
+})();
+</script>
+
+<script>
+  // Silently load /beta/beta.js if it exists (no 404 in console, no errors if missing)
+  (async () => {
+    try {
+      const res = await fetch('/beta/beta.js', { cache: 'no-store' });
+      if (!res.ok) return; // beta file not present → do nothing
+      const code = await res.text();
+      const s = document.createElement('script');
+      s.defer = true;
+      s.textContent = code;     // inject code directly to avoid extra network noise
+      document.head.appendChild(s);
+    } catch {
+      /* ignore if missing */
+    }
+  })();
+</script>
+
+<script defer src="/js/ads.js"></script>
+
+<style>
+  #energy-watch-ad {
+    display: none !important;
+  }
+</style>
+
+</body>
+</html>

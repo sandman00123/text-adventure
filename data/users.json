@@ -1,0 +1,29 @@
+{
+  "demo": {
+    "id": "demo",
+    "tier": "free",
+    "energy": {
+      "current": 30,
+      "maxBase": 30,
+      "lastUpdateAt": 1763020888514
+    },
+    "boost": {
+      "percent": 0,
+      "expiresAt": null
+    },
+    "entitlements": {
+      "adsRemoved": false,
+      "mic": false,
+      "tts": false,
+      "sarcasm": false,
+      "gore": false,
+      "adult": false
+    },
+    "session": {
+      "turnsSinceLastImage": 0,
+      "nextImageAt": 0
+    },
+    "lastDailyGiftAt": null,
+    "lastAdClaimAt": null
+  }
+}
