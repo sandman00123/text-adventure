@@ -39,6 +39,10 @@ app.use(express.urlencoded({ extended: true }));
 app.use(cors());
 
 // ---------- OpenAI (optional)
+console.log(
+  "Using OpenAI key prefix:",
+  (process.env.OPENAI_API_KEY || "").slice(0, 10)
+);
 const openaiApiKey = process.env.OPENAI_API_KEY || '';
 const openai = openaiApiKey ? new OpenAI({ apiKey: openaiApiKey }) : null;
 // --- Supabase Admin (server-side) ---                         // [ADD below line 35]
