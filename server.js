@@ -42,7 +42,7 @@ app.use(cors());
 // ---------- OpenAI (optional)
 console.log(
   "Using OpenAI key prefix:",
-  (process.env.OPENAI_API_KEY || "").slice(0, 10)
+  (process.env.OPENAI_API_KEY|| "").slice(0, 10)
 );
 
 const openai = new OpenAI({
@@ -1276,11 +1276,18 @@ try {
     // run image generation AFTER we send the response
     (async () => {
       try {
+        // 👇 DEBUG: see which key the image job is using
+        console.log(
+          "Image generation key prefix:",
+          (process.env.OPENAI_API_KEY || "").slice(0, 10)
+        );
+
         const img = await openai.images.generate({
           model: "gpt-image-1-mini",  // speed/price sweet spot
           prompt,
-          size: "1024x1024"             // faster for gameplay; plenty sharp in UI
+          size: "1024x1024"           // faster for gameplay; plenty sharp in UI
         });
+
         const b64 = img.data[0].b64_json;
         fs.writeFileSync(filePath, Buffer.from(b64, 'base64'));
         const publicUrl = `/generated/${fileName}`;
@@ -1290,7 +1297,10 @@ try {
         S.lastImageReadyAt = Date.now();
         console.log(`[AI IMAGE] Done → ${fileName} (job_id=${jobId})`);
       } catch (err) {
-        console.warn('Image job failed:', err?.message || err);
+        console.warn(
+          "Image job failed:",
+          err?.response?.data || err?.message || err
+        );
         // keep entry but mark as not ready (client will keep polling until timeout)
       }
     })();
