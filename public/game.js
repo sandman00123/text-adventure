@@ -81,6 +81,17 @@ async function postTurn(adventureId, action) {
 if (window.refreshEnergyUI) window.refreshEnergyUI();
 if (window.refreshEntitlements) window.refreshEntitlements();
 
+// When the user logs in or out, immediately refresh HUD + entitlements
+document.addEventListener('auth:login', () => {
+  if (window.refreshEnergyUI) window.refreshEnergyUI();
+  if (window.refreshEntitlements) window.refreshEntitlements();
+});
+
+document.addEventListener('auth:logout', () => {
+  if (window.refreshEnergyUI) window.refreshEnergyUI();
+  if (window.refreshEntitlements) window.refreshEntitlements();
+});
+
 // --- Initial load ---
 if (actionInput) actionInput.placeholder = '';
 
@@ -111,14 +122,18 @@ document.addEventListener('DOMContentLoaded', () => {
 function uid() { return 'dev-' + Date.now() + '-' + Math.floor(Math.random()*1e6); }
 
 async function postJSON(url, body) {
+  // Use the same auth headers as /api/start and /api/next
+  const headers = authHeaders();
+
   const r = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     credentials: 'include',
     body: JSON.stringify(body)
   });
   return r.json();
 }
+
 
 function getPrefs() {
   const s = document.getElementById('pref-sarcasm');
@@ -388,8 +403,13 @@ if ($tts) {
 // ── ENTITLEMENT-DRIVEN ENABLE/DISABLE ─────────────────────────────────────────
 window.refreshEntitlements = async function () {
   try {
-    const r = await fetch('/api/player', { credentials: 'include' });
+    const opts = { credentials: 'include' };
+    if (typeof authHeaders === 'function') {
+      opts.headers = authHeaders();
+    }
+    const r = await fetch('/api/player', opts);
     const j = await r.json();
+
     const ent = j.entitlements || {};
     // Tone toggles ownership gates
 const s = document.getElementById('pref-sarcasm');
@@ -446,142 +466,153 @@ if (!micAllowed) {
 // call once on load
 if (window.refreshEntitlements) window.refreshEntitlements();
 
- sendBtn?.addEventListener('click', async () => {
-   // If input is already locked (text/image still generating), ignore clicks/Enter
-   if (sendBtn.disabled) return;
- 
-   if (window._micListening) micStop();
-   const adventureId = getAdventureIdFromHash();
-   if (!adventureId) { alert('Start an adventure first.'); return; }
- 
-   const action = (actionInput?.value || '').trim();
-   if (!action) return;
-   actionInput.value = '';
- 
-   // 0) Lock input while the story + image are generating
-   sendBtn.disabled = true;
-   actionInput.disabled = true;
- 
-   // 1) Immediately show your line in the log, with spacing before & after
-   if (AIUX.renderStory) await AIUX.renderStory('\n', { cps: 45 });  // blank line before
-   if (AIUX.renderUser) AIUX.renderUser(action);
-   if (AIUX.renderStory) await AIUX.renderStory('\n', { cps: 45 });  // blank line after
- 
-   // 2) Ask server for the next story chunk
-   let out;
-   try {
-     out = await postTurn(adventureId, action);
-   } catch (err) {
-     console.error('postTurn error:', err);
-     alert('Network error, please try again.');
-     sendBtn.disabled = false;
-     actionInput.disabled = false;
-     return;
-   }
- 
-   if (out?.error) {
-     alert(out.error);
-     sendBtn.disabled = false;
-     actionInput.disabled = false;
-     return;
-   }
- 
-   window._sid   = out.adventure_id || out.sessionId || adventureId;
-   window._jobId = out.image_job_id || null;
- 
-   // 3) Append ONLY the new reply (do not concatenate old text)
-   const reply = out.reply || '(No reply text received)';
-   ttsStop(); // stop any current speech before rendering a new reply
- 
-   // 3.6) Render the AI reply FIRST (so text appears immediately)
-   await AIUX.renderStory(reply, { cps: 45 });
-   window._lastReplyText = reply; // store latest assistant reply for TTS
- 
-   // 3.7) Create a placeholder + pulsing status UNDER that reply (no layout jump)
-   const tail = document.getElementById('message-tail') || document.getElementById('log');
-   const aiBlock = document.createElement('div');
-   aiBlock.className = 'ai-block'; // styled in /css/game.css
- 
-   const placeholder = document.createElement('div');
-   placeholder.className = 'ai-scene-placeholder'; // shimmer box
- 
-   const status = document.createElement('div');
-   status.className = 'ai-image-status';    // pulsing chip
-   status.textContent = 'Drawing scene…';
- 
-   aiBlock.appendChild(placeholder);
-   aiBlock.appendChild(status);
-   if (tail) tail.appendChild(aiBlock);
- 
-   // 3.8) Poll the server for the image (parallel job)
-   let attempts = 0;
-   async function pollImage() {
-     try {
-       attempts += 1;
-       const r = await fetch(
-         `/api/image_status?session=${encodeURIComponent(window._sid || adventureId)}&job_id=${encodeURIComponent(window._jobId || '')}`,
-         { cache: 'no-store' }
-       );
-       const j = await r.json();
-       if (j && j.ok && j.ready && j.image_url) {
-         const img = document.createElement('img');
-         img.src = j.image_url;
-         img.alt = 'AI scene';
-         img.loading = 'lazy';
-         img.className = 'ai-scene-img'; // fades in via .visible
- 
-         placeholder.innerHTML = '';
-         placeholder.appendChild(img);
-         requestAnimationFrame(() => img.classList.add('visible')); // fade-in
- 
-         status.remove(); // remove the pulsing text
- 
-         // Unlock input once image is ready, unless the adventure is completed
-         if (!window._adventureCompleted) {
-           sendBtn.disabled = false;
-           actionInput.disabled = false;
-         }
-         return; // done
-       }
-     } catch (err) {
-       console.warn('poll image:', err);
-     }
- 
-     // If we've tried for ~30 seconds, stop polling + unlock so player isn't stuck
-     if (attempts >= 30) {
-       status.textContent = 'Image took too long.';
-       if (!window._adventureCompleted) {
-         sendBtn.disabled = false;
-         actionInput.disabled = false;
-       }
-       return;
-     }
- 
-     setTimeout(pollImage, 1000); // try again in 1s
-   }
- 
-   // Only poll if we actually have a job; otherwise unlock immediately after text
-   if (window._jobId) {
-     pollImage();
-   } else {
-     if (!window._adventureCompleted) {
-       sendBtn.disabled = false;
-       actionInput.disabled = false;
-     }
-   }
- 
-   // 3.5) Update the Energy HUD immediately after a successful turn
-   if (window.refreshEnergyUI) window.refreshEnergyUI();
-   if (window.refreshEntitlements) window.refreshEntitlements();
- 
-   // 4) If completed, show banner and keep input disabled
-   if (out.completed) {
-     await AIUX.renderStory('*** MAIN QUEST COMPLETED! ***', { cps: 45 });
-     window._adventureCompleted = true;
-     sendBtn.disabled = true;
-     actionInput.disabled = true;
-   }
- });
+sendBtn?.addEventListener('click', async () => {
+  // If input is already locked (text/image still generating), ignore clicks/Enter
+  if (sendBtn.disabled) return;
+
+  if (window._micListening) micStop();
+  const adventureId = getAdventureIdFromHash();
+  if (!adventureId) { alert('Start an adventure first.'); return; }
+
+  const action = (actionInput?.value || '').trim();
+  if (!action) return;
+  actionInput.value = '';
+
+  // 0) Lock input while the story + (maybe) image are generating
+  sendBtn.disabled = true;
+  actionInput.disabled = true;
+
+  // 1) Immediately show your line in the log, with spacing before & after
+  if (AIUX.renderStory) await AIUX.renderStory('\n', { cps: 45 });  // blank line before
+  if (AIUX.renderUser) AIUX.renderUser(action);
+  if (AIUX.renderStory) await AIUX.renderStory('\n', { cps: 45 });  // blank line after
+
+  // 2) Ask server for the next story chunk
+  let out;
+  try {
+    out = await postTurn(adventureId, action);
+  } catch (err) {
+    console.error('postTurn error:', err);
+    alert('Network error, please try again.');
+    sendBtn.disabled = false;
+    actionInput.disabled = false;
+    return;
+  }
+
+  if (out?.error) {
+    alert(out.error);
+    sendBtn.disabled = false;
+    actionInput.disabled = false;
+    return;
+  }
+
+  // Session + image job id (if any)
+  window._sid   = out.adventure_id || out.sessionId || adventureId;
+  window._jobId = out.image_job_id || null;
+
+  // 3) Append ONLY the new reply (do not concatenate old text)
+  const reply = out.reply || '(No reply text received)';
+  ttsStop(); // stop any current speech before rendering a new reply
+
+  // 3.6) Render the AI reply FIRST (so text appears immediately)
+  await AIUX.renderStory(reply, { cps: 45 });
+  window._lastReplyText = reply; // store latest assistant reply for TTS
+
+  // 3.7) IMAGE HANDLING
+  // Only create shimmer + poll if we actually have an image job.
+  if (window._jobId) {
+    const tail = document.getElementById('message-tail') || document.getElementById('log');
+    const aiBlock = document.createElement('div');
+    aiBlock.className = 'ai-block'; // styled in /css/game.css
+
+    const placeholder = document.createElement('div');
+    placeholder.className = 'ai-scene-placeholder'; // shimmer box
+
+    const status = document.createElement('div');
+    status.className = 'ai-image-status';    // pulsing chip
+    status.textContent = 'Drawing scene…';
+
+    aiBlock.appendChild(placeholder);
+    aiBlock.appendChild(status);
+    if (tail) tail.appendChild(aiBlock);
+
+    // 3.8) Poll the server for the image (parallel job)
+    let attempts = 0;
+    const sidForImage = window._sid || adventureId;
+    const jobIdForImage = window._jobId;
+
+    async function pollImage() {
+      try {
+        attempts += 1;
+        const r = await fetch(
+          `/api/image_status?session=${encodeURIComponent(sidForImage)}&job_id=${encodeURIComponent(jobIdForImage)}`,
+          { cache: 'no-store' }
+        );
+        const j = await r.json();
+        if (j && j.ok && j.ready && j.image_url) {
+  const img = document.createElement('img');
+  img.src = j.image_url;
+  img.alt = 'AI scene';
+  img.loading = 'lazy';
+  img.className = 'ai-scene-img'; // fades in via .visible
+
+  // 🔴 NEW: stop shimmering on this placeholder
+  placeholder.classList.add('stop-shimmer');
+
+  placeholder.innerHTML = '';
+  placeholder.appendChild(img);
+  requestAnimationFrame(() => img.classList.add('visible')); // fade-in
+
+  status.remove(); // remove the pulsing text
+
+  // Unlock input once image is ready, unless the adventure is completed
+  if (!window._adventureCompleted) {
+    sendBtn.disabled = false;
+    actionInput.disabled = false;
+  }
+  return; // done
+}
+
+      } catch (err) {
+        console.warn('poll image:', err);
+      }
+
+      // If we've tried for ~30 seconds, stop polling + unlock so player isn't stuck
+      if (attempts >= 60) {
+        status.textContent = 'Image took too long.';
+        if (!window._adventureCompleted) {
+          sendBtn.disabled = false;
+          actionInput.disabled = false;
+        }
+        return;
+      }
+
+      setTimeout(pollImage, 1000); // try again in 1s
+    }
+
+    // Start polling for this job
+    pollImage();
+
+  } else {
+    // No image job this turn (e.g., non-Ultimate tier or cadence skipped) → no shimmer
+    if (!window._adventureCompleted) {
+      sendBtn.disabled = false;
+      actionInput.disabled = false;
+    }
+  }
+
+  // 3.5) Update the Energy HUD immediately after a successful turn
+  if (window.refreshEnergyUI) window.refreshEnergyUI();
+  if (window.refreshEntitlements) window.refreshEntitlements();
+
+  // 4) If completed, show banner and keep input disabled
+  if (out.completed) {
+    await AIUX.renderStory('*** MAIN QUEST COMPLETED! ***', { cps: 45 });
+    window._adventureCompleted = true;
+    sendBtn.disabled = true;
+    actionInput.disabled = true;
+  }
+});
 
 actionInput?.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {

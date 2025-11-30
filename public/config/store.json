@@ -1,5 +1,5 @@
 {
-  "beta": true,
+  "beta": false,
   "currency": "USD",
   "tiers": {
     "standard": 4.99,

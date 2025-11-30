@@ -24,7 +24,10 @@ import { createClient } from '@supabase/supabase-js';   // [ADD at line 16]
 import { getTierOrDefault } from './config/tierConfig.js';
 import { applyTimeRefill, getEffectiveMaxCapacity, trySpend } from './services/energy.js';
 // --------------------------------
+// [LINE 5]  Import the image manifest helper
+import { registerGeneratedImage } from "./utils/imageManifest.js";
 
+console.log("=== AI Adventure v2.4.2 SERVER STARTED ===");
 
 dotenv.config();
 
@@ -291,7 +294,7 @@ Respect any prior variables for consistency.`;
   const r = await openai.chat.completions.create({
     model: 'gpt-4o-mini',
     messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
-    temperature: 0.8,
+    temperature: 0.95,
     max_tokens: 200
   });
   let obj = {};
@@ -339,8 +342,8 @@ Write a fresh opener for the given genre anchored to the main quest.
 STYLE:
 - Keep it energetic and easy to read (~10th-grade).
 - Avoid genre clichés and obvious trope signals.
-- Focus on concrete action or tactile details; minimal exposition (unless the user's actions indicate they want otherwise).
-- 2–4 sentences total, about 50–80 words.
+- Focus on concrete action or tactile details; very minimal exposition (unless the user's actions indicate they want otherwise).
+- 2 sentences total, about 25-45 words.
 - You may hint at (or lightly foreshadow) an NPC aligned with the provided personality, but don’t dump traits.
 - End with a natural nudge for the player to act.
 - Each run should feel new in cadence and angle.
@@ -365,8 +368,8 @@ Different setting each run. End with a natural prompt for the player to act.
   const r = await openai.chat.completions.create({
     model: 'gpt-4o-mini',
     messages: [{ role: 'system', content: sys }, { role: 'user', content: user }],
-    temperature: 0.85,
-    max_tokens: 100,
+    temperature: 0.95,
+    max_tokens: 65,
     presence_penalty: 0.6,
   });
   return (r.choices?.[0]?.message?.content?.trim() || mainQuest);
@@ -429,8 +432,8 @@ async function aiContinue({ genreUi, mainQuest, vars, history, action, personali
 368: Continue the story in a concise, energetic way grounded in prior context and the player's action.
 369: STYLE:
 370: - Keep it clear (~10th-grade), avoid clichés and obvious trope signals.
-371: - Minimal exposition; keep momentum with concrete actions or tactile details.
-372: - 2–4 sentences, about 60–90 words total.
+371: - very Minimal exposition; keep momentum with concrete actions or tactile details.
+372: - 2 sentences, about 25-45 words total.
 373: - If a side-quest hook exists, introduce it diegetically (no UI terms).
 374: - If endgame is active, progress or acknowledge steps naturally.
 375: - Keep NPC behavior consistent with the provided personality.
@@ -450,9 +453,9 @@ Keep NPC behavior aligned with the given personality.
   const r = await openai.chat.completions.create({
     model: 'gpt-4o-mini',
     messages: [{ role: 'system', content: sys }, { role: 'user', content: JSON.stringify(userPayload) }],
-    temperature: 0.9,
+    temperature: 0.95,
     presence_penalty: 0.6,
-    max_tokens: 100, 
+    max_tokens: 65, 
   });
   const text = r.choices?.[0]?.message?.content?.trim() || '';
   return { text: text || `You proceed. (Main quest: ${mainQuest})`, sideQuestDetected: Boolean(npcHook) };
@@ -462,7 +465,7 @@ async function aiEpilogue({ genreUi, mainQuest, vars, personality, endgame }) {
   if (!openai) {
     return `Epilogue: ${endgame.triggeredBy} brings closure. ${endgame.reason} The dust settles, but the world remains open if you choose to continue.`;
   }
-  const sys = `Write a short epilogue (80–120 words), tying the ending to earlier events.
+  const sys = `Write a short epilogue (20-40 words), tying the ending to earlier events.
 use clear sentences (~10th-grade reading level).
 It should feel complete, but leave a subtle door open for future adventures in the same world.`;
   const user = JSON.stringify({
@@ -474,8 +477,8 @@ It should feel complete, but leave a subtle door open for future adventures in t
   const r = await openai.chat.completions.create({
     model: 'gpt-4o-mini',
     messages: [{ role: 'system', content: sys }, { role: 'user', content: user }],
-    temperature: 0.9,
-    max_tokens: 220
+    temperature: 0.95,
+    max_tokens: 70
   });
   return (r.choices?.[0]?.message?.content?.trim() || 'Epilogue.');
 }
@@ -502,8 +505,8 @@ async function aiRiskScore(action, context) {
   const r = await openai.chat.completions.create({
     model: 'gpt-4o-mini',
     messages: [{ role: 'system', content: sys }, { role: 'user', content: user }],
-    temperature: 0.0,
-    max_tokens: 5
+    temperature: 0.3,
+    max_tokens: 4
   });
   const raw = (r.choices?.[0]?.message?.content || '').trim();
   const n = Number.parseInt(raw, 10);
@@ -1130,42 +1133,52 @@ app.post('/api/next', optionalAuth, async (req, res) => {
 
     const S = sessions[sid];
     if (!S.imageJobs) S.imageJobs = Object.create(null);  // per-session job map
-    S.imageJobId = null;                                   // reset active job id for this turn
+    S.imageJobId = null;                                  // reset active job id for this turn
 
     if (S.dead) {
-      return res.status(400).json({ error: 'Character is dead. Start a new session to play again.', dead: true, can_continue: false });
+      return res.status(400).json({
+        error: 'Character is dead. Start a new session to play again.',
+        dead: true,
+        can_continue: false
+      });
     }
-        // ---------- ENERGY GATE (Step 2): spend 1 energy for this turn ----------
-        {
-          const playerId = userId || 'demo';
-          const user = getOrCreateUser(playerId);
-    
-          // Initialize energy bucket if first time and apply refill to now
-          if (!user.energy) {
-            const tier = getTierOrDefault(user.tier);
-            user.energy = { current: tier.cap, maxBase: tier.cap, lastUpdateAt: Date.now() };
+
+    // ---------- ENERGY GATE (Step 2): spend 1 energy for this turn ----------
+    {
+      const playerId = userId || 'demo';
+      const user = getOrCreateUser(playerId);
+
+      // Initialize energy bucket if first time and apply refill to now
+      if (!user.energy) {
+        const tier = getTierOrDefault(user.tier);
+        user.energy = { current: tier.cap, maxBase: tier.cap, lastUpdateAt: Date.now() };
+      }
+      applyTimeRefill(user);
+
+      if (user.energy.current < 1) {
+        return res.status(402).json({
+          ok: false,
+          error: 'INSUFFICIENT_ENERGY',
+          energy: {
+            current: user.energy.current,
+            effectiveMax: getEffectiveMaxCapacity(user),
           }
-          applyTimeRefill(user);
-    
-          if (user.energy.current < 1) {
-            return res.status(402).json({
-              ok: false,
-              error: 'INSUFFICIENT_ENERGY',
-              energy: {
-                current: user.energy.current,
-                effectiveMax: getEffectiveMaxCapacity(user),
-              }
-            });
-          }
-    
-          // Charge the player one energy to proceed
-          user.energy.current -= 1;
-        }
-        // -----------------------------------------------------------------------
+        });
+      }
+
+      // Charge the player one energy to proceed
+      user.energy.current -= 1;
+    }
+    // -----------------------------------------------------------------------
 
     // post-epilogue continuation reopen
     if (S.endgame.completed && S.endgame.epilogueShown && S.endgame.postEpilogueReady) {
-      S.endgame = { active: false, stepsTotal: 0, stepsDone: 0, triggeredBy: null, reason: null, startedTurn: S.turns, completed: false, epilogueShown: false, postEpilogueReady: false };
+      S.endgame = {
+        active: false, stepsTotal: 0, stepsDone: 0,
+        triggeredBy: null, reason: null,
+        startedTurn: S.turns, completed: false,
+        epilogueShown: false, postEpilogueReady: false
+      };
       S.progress = Math.floor(S.progress * 0.25);
     }
 
@@ -1196,16 +1209,27 @@ app.post('/api/next', optionalAuth, async (req, res) => {
 
     // side quest hook?
     let sideTemplate = null;
-    const isSideQuestTurn = (!S.endgame.active && Array.isArray(S.sideQuestSlots) && S.sideQuestSlots.includes(blockTurn));
+    const isSideQuestTurn = (!S.endgame.active &&
+      Array.isArray(S.sideQuestSlots) &&
+      S.sideQuestSlots.includes(blockTurn));
+
     if (isSideQuestTurn && Array.isArray(S.events) && S.events.length) {
       sideTemplate = chooseSideEventTemplate(S.events, S.personality);
-      const filled = await aiFillVariables({ genreUi: S.genreUi, template: sideTemplate, priorVars: S.vars });
+      const filled = await aiFillVariables({
+        genreUi: S.genreUi,
+        template: sideTemplate,
+        priorVars: S.vars
+      });
       S.vars = filled.vars;
       S.sideQuestSlots = S.sideQuestSlots.filter(n => n !== blockTurn);
     }
 
     // apply risk/health
-    const riskScore = await aiRiskScore(action, { main_quest: S.main_quest, endgame_active: S.endgame.active, sidequest_turn: isSideQuestTurn });
+    const riskScore = await aiRiskScore(action, {
+      main_quest: S.main_quest,
+      endgame_active: S.endgame.active,
+      sidequest_turn: isSideQuestTurn
+    });
     const dmgInfo = damageFromRisk(riskScore, { sidequestTurn: isSideQuestTurn });
     let deathNow = false, deathText = null;
     if (dmgInfo.instantDeath) {
@@ -1213,12 +1237,25 @@ app.post('/api/next', optionalAuth, async (req, res) => {
       deathText = `You act without regard for survival. The world answers, final and absolute. There is no coming back from this.`;
     } else if (dmgInfo.dmg > 0) {
       S.health = Math.max(0, S.health - dmgInfo.dmg);
-      if (S.health <= 0) { S.dead = true; deathNow = true; deathText = `Your injuries overwhelm you. Darkness folds in as the noise of the wasteland fades.`; }
+      if (S.health <= 0) {
+        S.dead = true; deathNow = true;
+        deathText = `Your injuries overwhelm you. Darkness folds in as the noise of the wasteland fades.`;
+      }
     }
     if (deathNow) {
       S.history.push({ role: 'user', content: action });
       S.history.push({ role: 'assistant', content: deathText });
-      return res.json({ ok: true, reply: deathText, side_quest_detected: false, endgame_active: false, completed: false, dead: true, can_continue: false, turns: S.turns, health: S.health });
+      return res.json({
+        ok: true,
+        reply: deathText,
+        side_quest_detected: false,
+        endgame_active: false,
+        completed: false,
+        dead: true,
+        can_continue: false,
+        turns: S.turns,
+        health: S.health
+      });
     }
 
     // endgame step progress?
@@ -1230,98 +1267,150 @@ app.post('/api/next', optionalAuth, async (req, res) => {
       }
     }
 
-// Allow updating tone prefs mid-session (only if owned)
-{
-  const player = getOrCreateUser(userId || 'demo');
-  S.prefs = normalizePrefs((req.body && req.body.prefs) || (S.prefs || {}), player.entitlements);
-}
+    // Allow updating tone prefs mid-session (only if owned)
+    {
+      const player = getOrCreateUser(userId || 'demo');
+      S.prefs = normalizePrefs(
+        (req.body && req.body.prefs) || (S.prefs || {}),
+        player.entitlements
+      );
+    }
 
     // continue story
-    // continue story
-const { text } = await aiContinue({
-  genreUi: S.genreUi, mainQuest: S.main_quest, vars: S.vars,
-  history: S.history, action, personality: S.personality,
-  sideTemplate, endgame: S.endgame.active ? { ...S.endgame } : null,
-  prefs: S.prefs || { sarcasm:false, gore:false, adult:false }
+    const { text } = await aiContinue({
+      genreUi: S.genreUi,
+      mainQuest: S.main_quest,
+      vars: S.vars,
+      history: S.history,
+      action,
+      personality: S.personality,
+      sideTemplate,
+      endgame: S.endgame.active ? { ...S.endgame } : null,
+      prefs: S.prefs || { sarcasm: false, gore: false, adult: false }
+    });
+
+    // now spice the AI text (AFTER the call)
+    const spicedText = applyWildcardWordMode(text, { session: S });
+
+    // --- IMAGE LOGIC (Ultimate only) ---
+        const playerIdForImage = userId || 'demo';
+    const userForImage = getOrCreateUser(playerIdForImage);
+    const userTier = getTierOrDefault(userForImage.tier);
+    const isUltimate = userTier.key === 'ultimate';  // only Ultimate gets AI images
+
+    console.log(
+  "[AI IMAGE DEBUG] playerIdForImage=",
+  playerIdForImage,
+  "tier=" + userTier.key,
+  "isUltimate=" + isUltimate
+);
+
+
+    S.turnsSinceLastImage = (S.turnsSinceLastImage || 0) + 1;
+
+    if (isUltimate && S.turnsSinceLastImage >= (S.nextImageAt || 1)) {
+      console.log("[AI IMAGE v2.4.2] Condition passed, starting image job");
+
+      const prompt = clampTextForPrompt(
+        `Scene from a ${S.genreUi} adventure.
+         Main quest: ${S.main_quest}.
+         Recent story: ${text}.
+         Rendered in detailed cinematic style, natural lighting, realistic proportions.`
+      );
+
+      // Per-turn job id + initialize job entry as "pending"
+      const jobId = `${S.id || sid}_${Date.now()}`;
+      const fileName = `scene_${jobId}.webp`; // smaller transfer; still fine
+      const filePath = path.join(ensureGeneratedDir(), fileName);
+
+      // mark this turn's job as pending BEFORE launching
+      S.imageJobs[jobId] = { ready: false, url: null, turn: S.turns };
+      S.imageJobId = jobId;
+
+      // run image generation AFTER we send the response
+      (async () => {
+        try {
+          console.log(
+            "Image generation key prefix:",
+            (process.env.OPENAI_API_KEY || "").slice(0, 10)
+          );
+
+          const img = await openai.images.generate({
+  model: "gpt-image-1-mini",
+  prompt,
+  size: "1024x1024"
 });
 
-// now spice the AI text (AFTER the call)
-const spicedText = applyWildcardWordMode(text, { session: S });
+const b64 = img.data[0].b64_json;
+fs.writeFileSync(filePath, Buffer.from(b64, 'base64'));
+const publicUrl = `/generated/${fileName}`;
 
-// ---------- IMAGE GENERATION (parallel async job; per-turn job_id) ----------
-try {
-  const playerIdForImage = req.user?.id || 'demo';
-  const userForImage = getOrCreateUser(playerIdForImage);
-  const isUltimate = String(userForImage.tier || '').toLowerCase() === 'ultimate';
+// set this job as ready; DO NOT touch a global lastImageUrl
+S.imageJobs[jobId] = { ready: true, url: publicUrl, turn: S.turns };
+S.lastImageReadyAt = Date.now();
 
-  S.turnsSinceLastImage = (S.turnsSinceLastImage || 0) + 1;
+// 🔢 keep track of how many images this session has
+S.imagesCount = (S.imagesCount || 0) + 1;
 
-  if (isUltimate && S.turnsSinceLastImage >= (S.nextImageAt || 1)) {
-    const prompt = clampTextForPrompt(
-      `Scene from a ${S.genreUi} adventure.
-       Main quest: ${S.main_quest}.
-       Recent story: ${text}.
-       Rendered in detailed cinematic style, natural lighting, realistic proportions.`
-    );
-
-    // Per-turn job id + initialize job entry as "pending"
-    const jobId = `${S.id || sid}_${Date.now()}`;
-    const fileName = `scene_${jobId}.webp`; // smaller transfer; still fine
-    const filePath = path.join(ensureGeneratedDir(), fileName);
-
-    // mark this turn's job as pending BEFORE launching
-    S.imageJobs[jobId] = { ready: false, url: null, turn: S.turns };
-    S.imageJobId = jobId;
-
-    // run image generation AFTER we send the response
-    (async () => {
-      try {
-        // 👇 DEBUG: see which key the image job is using
-        console.log(
-          "Image generation key prefix:",
-          (process.env.OPENAI_API_KEY || "").slice(0, 10)
-        );
-
-        const img = await openai.images.generate({
-          model: "gpt-image-1-mini",  // speed/price sweet spot
-          prompt,
-          size: "1024x1024"           // faster for gameplay; plenty sharp in UI
-        });
-
-        const b64 = img.data[0].b64_json;
-        fs.writeFileSync(filePath, Buffer.from(b64, 'base64'));
-        const publicUrl = `/generated/${fileName}`;
-
-        // set this job as ready; DO NOT touch a global lastImageUrl
-        S.imageJobs[jobId] = { ready: true, url: publicUrl, turn: S.turns };
-        S.lastImageReadyAt = Date.now();
-        console.log(`[AI IMAGE] Done → ${fileName} (job_id=${jobId})`);
-      } catch (err) {
-        console.warn(
-          "Image job failed:",
-          err?.response?.data || err?.message || err
-        );
-        // keep entry but mark as not ready (client will keep polling until timeout)
-      }
-    })();
-
-    // cadence for next image
-    S.turnsSinceLastImage = 0;
-    S.nextImageAt = 1;
-  }
-} catch (e) {
-  console.warn('Image job launch failed:', e?.message || e);
+// 🖼️ NEW: push an image entry into the story history
+if (Array.isArray(S.history)) {
+  S.history.push({
+    role: 'image',
+    image_url: publicUrl,
+    turn: S.turns,
+  });
 }
 
+console.log(`[AI IMAGE] Done → ${fileName} (job_id=${jobId})`);
 
+// (optional) image manifest tracking if you enabled it
+if (process.env.ENABLE_IMAGE_MANIFEST === "true") {
+  try {
+    await registerGeneratedImage(fileName);
+  } catch (err) {
+    console.warn("[IMAGE MANIFEST] Failed to register image:", err);
+  }
+}
+
+          // --- DEV-ONLY IMAGE MANIFEST TRACKING ---
+if (process.env.ENABLE_IMAGE_MANIFEST === "true") {
+  try {
+    await registerGeneratedImage(fileName);
+  } catch (err) {
+    console.warn("[IMAGE MANIFEST] Failed to register image:", err);
+  }
+}
+        } catch (err) {
+          console.warn(
+            "Image job failed:",
+            err?.response?.data || err?.message || err
+          );
+        }
+      })();
+
+      // cadence for next image
+      S.turnsSinceLastImage = 0;
+      S.nextImageAt = 1;
+    }
+
+    // ---------- ENDGAME / EPILOGUE & RESPONSE ----------
     if (S.endgame.active && progressEndgameThisTurn) {
       S.endgame.stepsDone += 1;
-      if (S.endgame.stepsDone >= S.endgame.stepsTotal) { S.endgame.active = false; S.endgame.completed = true; }
+      if (S.endgame.stepsDone >= S.endgame.stepsTotal) {
+        S.endgame.active = false;
+        S.endgame.completed = true;
+      }
     }
 
     let epilogue = null, postEpilogueHook = null;
     if (S.endgame.completed && !S.endgame.epilogueShown) {
-      epilogue = await aiEpilogue({ genreUi: S.genreUi, mainQuest: S.main_quest, vars: S.vars, personality: S.personality, endgame: S.endgame });
+      epilogue = await aiEpilogue({
+        genreUi: S.genreUi,
+        mainQuest: S.main_quest,
+        vars: S.vars,
+        personality: S.personality,
+        endgame: S.endgame
+      });
       S.endgame.epilogueShown = true;
       S.endgame.postEpilogueReady = true;
       postEpilogueHook = postEpilogueHookText();
@@ -1330,7 +1419,7 @@ try {
     S.history.push({ role: 'user', content: action });
     S.history.push({ role: 'assistant', content: spicedText });
     if (epilogue) S.history.push({ role: 'assistant', content: epilogue });
-    
+
     res.json({
       ok: true,
       image_job_id: S.imageJobId || null,
@@ -1363,11 +1452,11 @@ try {
         const user = getOrCreateUser(playerId);
         return getEffectiveMaxCapacity(user);
       })(),
-          image_url: imageUrl || null,
-    image_generated: Boolean(imageUrl),
-    image_anchor_turn: imageUrl ? S.turns : null,  // <-- frontend: pin image here, append all future text below
-    images_count: (S.imagesCount || 0),
-    // image_filename: imageUrl ? imageUrl.split('/').pop() : null, // (optional helper)
+      image_url: imageUrl || null,
+      image_generated: Boolean(imageUrl),
+      image_anchor_turn: imageUrl ? S.turns : null,  // <-- frontend: pin image here, append all future text below
+      images_count: (S.imagesCount || 0),
+      // image_filename: imageUrl ? imageUrl.split('/').pop() : null, // (optional helper)
     });
 
   } catch (err) {
@@ -1375,6 +1464,7 @@ try {
     res.status(500).json({ error: 'Failed to process turn' });
   }
 });
+
 
 app.post('/api/save-story', optionalAuth, async (req, res) => {
   try {

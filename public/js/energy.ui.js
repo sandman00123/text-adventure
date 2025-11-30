@@ -28,11 +28,23 @@ function setWatchBusy(busy) {
   }
   
   
-    async function fetchPlayer() {
-      // Replace userId=demo with your real user logic once auth is wired
-      const r = await fetch('/api/player', { credentials: 'include' }).catch(() => null);
-      const j = await r.json().catch(() => null);
-      return j && j.ok ? j : null;
+        async function fetchPlayer() {
+      try {
+        const options = { credentials: 'include' };
+
+        // If game.js is loaded and authHeaders() exists, use it so the
+        // request is tied to the signed-in Supabase user.
+        if (typeof authHeaders === 'function') {
+          options.headers = authHeaders();
+        }
+
+        const r = await fetch('/api/player', options);
+        const j = await r.json().catch(() => null);
+        return j && j.ok ? j : null;
+      } catch (e) {
+        console.warn('[EnergyHUD] fetchPlayer failed', e);
+        return null;
+      }
     }
   
     function applySnapshot(snap) {
@@ -104,11 +116,16 @@ if (btn) {
     claimBtn.addEventListener('click', async () => {
       try {
         setClaimBusy(true);
+                const headers = (typeof authHeaders === 'function')
+          ? authHeaders()
+          : { 'Content-Type': 'application/json' };
+
         const r = await fetch('/api/energy/claim-daily', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           credentials: 'include'
         });
+
         const j = await r.json().catch(() => null);
 
         if (r.ok && j && j.ok) {
@@ -142,12 +159,17 @@ if (btn) {
 
         // In production: show ad, get token/receipt, send it here.
         // For now we send a dummy token so the server accepts it.
+                const headers = (typeof authHeaders === 'function')
+          ? authHeaders()
+          : { 'Content-Type': 'application/json' };
+
         const r = await fetch('/api/ads/claim', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           credentials: 'include',
           body: JSON.stringify({ token: 'dev-ok' })
         });
+
         const j = await r.json().catch(() => null);
 
         if (r.ok && j && j.ok) {

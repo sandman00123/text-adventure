@@ -3,16 +3,10 @@
   // If true, we’ll check /api/store and hide ads when beta=true
   const RESPECT_BETA = true;
 
-  // Placeholder images for now (replace with real ad code later)
-  const LEFT_BANNERS = [
-    '/images/ad-left-placeholder.jpg'
-  ];
-  const RIGHT_BANNERS = [
-    '/images/ad-right-placeholder.jpg'
-  ];
-
-  // Optional rotation (ms). Set to 0 to disable rotation.
-  const ROTATE_EVERY_MS = 0; // e.g., 30000 for 30s
+  // Your AdSense IDs:
+  const AD_CLIENT = 'ca-pub-7169143289133717'; // <-- REPLACE with your real ca-pub ID
+  const LEFT_SLOT = '3495654779';             // <-- REPLACE with your left data-ad-slot
+  const RIGHT_SLOT = '6222600907';            // <-- REPLACE with your right data-ad-slot
 
   // ---- helpers ----
   function create(tag, attrs = {}, children = []) {
@@ -49,34 +43,43 @@
     // avoid duplicates
     if (document.getElementById('ads-shell')) return null;
 
+    // Shell + side containers (CSS already handles sizing/position)
     const shell = create('div', { id: 'ads-shell' }, []);
     const left  = create('div', { className: 'vertical-ad left' }, []);
     const right = create('div', { className: 'vertical-ad right' }, []);
 
-    // initial images
-    const leftImg  = create('img', { src: LEFT_BANNERS[0] || '', alt: 'Ad Left' });
-    const rightImg = create('img', { src: RIGHT_BANNERS[0] || '', alt: 'Ad Right' });
+    // Create AdSense <ins> blocks for left and right
+    const leftIns = create('ins', {
+      className: 'adsbygoogle',
+      style: { display: 'block', width: '120px', height: '100%' },
+      'data-ad-client': AD_CLIENT,
+      'data-ad-slot': LEFT_SLOT,
+      'data-ad-format': 'auto',
+      'data-full-width-responsive': 'false'
+    });
 
-    left.appendChild(leftImg);
-    right.appendChild(rightImg);
+    const rightIns = create('ins', {
+      className: 'adsbygoogle',
+      style: { display: 'block', width: '120px', height: '100%' },
+      'data-ad-client': AD_CLIENT,
+      'data-ad-slot': RIGHT_SLOT,
+      'data-ad-format': 'auto',
+      'data-full-width-responsive': 'false'
+    });
+
+    left.appendChild(leftIns);
+    right.appendChild(rightIns);
 
     shell.appendChild(left);
     shell.appendChild(right);
     document.body.appendChild(shell);
 
-    // optional rotation
-    if (ROTATE_EVERY_MS > 0) {
-      let li = 0, ri = 0;
-      setInterval(() => {
-        if (LEFT_BANNERS.length > 1) {
-          li = (li + 1) % LEFT_BANNERS.length;
-          leftImg.src = LEFT_BANNERS[li];
-        }
-        if (RIGHT_BANNERS.length > 1) {
-          ri = (ri + 1) % RIGHT_BANNERS.length;
-          rightImg.src = RIGHT_BANNERS[ri];
-        }
-      }, ROTATE_EVERY_MS);
+    // Tell AdSense to render both ads
+    try {
+      (window.adsbygoogle = window.adsbygoogle || []).push({});
+      (window.adsbygoogle = window.adsbygoogle || []).push({});
+    } catch (e) {
+      console.warn('AdSense not loaded or failed to initialize:', e);
     }
 
     return shell;

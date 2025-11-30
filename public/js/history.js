@@ -142,6 +142,49 @@ function authHeaders(opts = {}) {
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') modalBack.style.display = 'none'; });
   }
 
+    // Render a single message (text or image) into the chatView
+  function renderStoryMessage(h, chatView){
+    const role = String(h.role || '').toLowerCase();
+
+    // --- IMAGE MESSAGE ---
+    // Either explicit role 'image' or presence of image_url
+    if (role === 'image' || h.image_url) {
+      const msg = document.createElement('div');
+      msg.className = 'msg from-assistant image-msg';
+
+      const img = document.createElement('img');
+      img.src = h.image_url || '';
+      img.alt = 'AI scene';
+      img.loading = 'lazy';
+
+      msg.appendChild(img);
+      chatView.appendChild(msg);
+      return;
+    }
+
+    // --- SYSTEM / USER / ASSISTANT (TEXT) ---
+    const content = escapeHTML(h.content || '');
+    const msg = document.createElement('div');
+    msg.className = 'msg ' + (
+      role === 'user'
+        ? 'from-user'
+        : role === 'assistant'
+          ? 'from-assistant'
+          : 'from-system'
+    );
+
+    const label = document.createElement('span');
+    label.className = 'role';
+    label.textContent = role || 'assistant';
+
+    const body = document.createElement('div');
+    body.innerHTML = content.replace(/\n/g, '<br>');
+
+    msg.appendChild(label);
+    msg.appendChild(body);
+    chatView.appendChild(msg);
+  }
+
   function openModal(title, story){
     const modalBack = $('storyModal');
     const chatView = $('chatView');
@@ -151,23 +194,11 @@ function authHeaders(opts = {}) {
     titleEl.textContent = title || 'Story';
     chatView.innerHTML = '';
 
-    const hist = Array.isArray(story.history) ? story.history : [];
+        const hist = Array.isArray(story.history) ? story.history : [];
     for (const h of hist) {
-      const role = String(h.role || '').toLowerCase();
-      const content = escapeHTML(h.content || '');
-      const msg = document.createElement('div');
-      msg.className = 'msg ' + (role === 'user' ? 'from-user' : role === 'assistant' ? 'from-assistant' : 'from-system');
-
-      const label = document.createElement('span');
-      label.className = 'role';
-      label.textContent = role;
-      const body = document.createElement('div');
-      body.innerHTML = content.replace(/\n/g, '<br>');
-
-      msg.appendChild(label);
-      msg.appendChild(body);
-      chatView.appendChild(msg);
+      renderStoryMessage(h, chatView);
     }
+
 
     modalBack.style.display = 'flex';
   }

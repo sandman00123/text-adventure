@@ -1,5 +1,13 @@
 next moves:
-the game only generate one image, then it doesnt generate any more. check.
-fix the text that says "generating iamge.." (it looks like the game.css file wasnt connected).check.
-ook into the speed of image generation.
-change the game.css file's visuals.
+the game only generate one image, then it doesnt generate any more. (check)
+fix the text that says "generating iamge.." (it looks like the game.css file wasnt connected).(check)
+look into the speed of image generation.???????
+change the game.css file's visuals. (check)
+orginize the images generated in the folder.(check)
+fix the pulsing once the image is generated. (check)
+fix the (not ending the sentence) response.?????????
+add images to history. (check)
+fix the image generating even when im not in ultimate tier. (check)
+fix the temp of the AI, and length of the text or (next/start) ?????????
+change (public/config/store.json) to store ownership (check)
+!!! fix the tier issue related to acc. (placeholder line on server.js: const playerIdForImage = 'demo'; // DEV ONLY: force demo user for images  ) (check)
