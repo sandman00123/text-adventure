@@ -1,7 +1,7 @@
 (function () {
   // ---- CONFIG ----
   // If true, we’ll check /api/store and hide ads when beta=true
-  const RESPECT_BETA = true;
+  const RESPECT_BETA = false;
 
   // Your AdSense IDs:
   const AD_CLIENT = 'ca-pub-7169143289133717'; // <-- REPLACE with your real ca-pub ID
